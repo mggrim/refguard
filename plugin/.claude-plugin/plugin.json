@@ -1,0 +1,5 @@
+{
+  "name": "refguard",
+  "description": "Citation and reference verification: deterministic bibliography audit (fabricated DOIs, field mixing, retractions) plus independent claim-vs-source verification agents.",
+  "version": "0.1.0"
+}

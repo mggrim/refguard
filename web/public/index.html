@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RefGuard</title>
+<style>
+  :root{
+    --bg:#faf9f6; --fg:#1a1a1a; --muted:#6b6b6b; --card:#ffffff; --line:#e4e1da;
+    --block:#b3261e; --block-bg:#fdece9; --review:#8a6d00; --review-bg:#fdf6df;
+    --pass:#1e6b3a; --pass-bg:#e9f5ec; --accent:#284b63;
+  }
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+    --bg:#16181c; --fg:#e8e6e1; --muted:#9a9a94; --card:#1e2126; --line:#31353c;
+    --block:#ff8a80; --block-bg:#3a2422; --review:#ffd54f; --review-bg:#39321c;
+    --pass:#81c995; --pass-bg:#1f3327; --accent:#8ab4d4;
+  }}
+  :root[data-theme="dark"]{
+    --bg:#16181c; --fg:#e8e6e1; --muted:#9a9a94; --card:#1e2126; --line:#31353c;
+    --block:#ff8a80; --block-bg:#3a2422; --review:#ffd54f; --review-bg:#39321c;
+    --pass:#81c995; --pass-bg:#1f3327; --accent:#8ab4d4;
+  }
+  body{background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;
+       margin:0;padding:2rem 1rem 4rem;}
+  main{max-width:820px;margin:0 auto;}
+  h1{font-size:1.7rem;margin:0 0 .2rem;}
+  h1 span{color:var(--accent);}
+  .sub{color:var(--muted);margin:0 0 1.5rem;}
+  textarea{width:100%;box-sizing:border-box;min-height:220px;padding:.9rem;border:1px solid var(--line);
+           border-radius:8px;background:var(--card);color:var(--fg);font:13px/1.5 ui-monospace,monospace;resize:vertical;}
+  button{margin-top:.8rem;padding:.6rem 1.4rem;font-size:1rem;border:none;border-radius:8px;
+         background:var(--accent);color:#fff;cursor:pointer;}
+  button:disabled{opacity:.5;cursor:default;}
+  #progress{color:var(--muted);margin:.8rem 0;}
+  .tier{margin-top:1.4rem;}
+  .tier h2{font-size:1.05rem;margin:0 0 .5rem;}
+  .item{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line);
+        border-radius:6px;padding:.6rem .8rem;margin-bottom:.5rem;overflow-x:auto;}
+  .item .k{font-weight:600;}
+  .item .v{font:12px ui-monospace,monospace;padding:.1rem .45rem;border-radius:4px;margin-right:.5rem;}
+  .item .n{color:var(--muted);font-size:.9rem;margin-top:.2rem;}
+  .b .v{background:var(--block-bg);color:var(--block);} .b{border-left-color:var(--block);}
+  .r .v{background:var(--review-bg);color:var(--review);} .r{border-left-color:var(--review);}
+  .p .v{background:var(--pass-bg);color:var(--pass);} .p{border-left-color:var(--pass);}
+  .note{font-size:.85rem;color:var(--muted);margin-top:2.2rem;border-top:1px solid var(--line);padding-top:.9rem;}
+  .note a{color:var(--accent);}
+</style>
+</head>
+<body>
+<main>
+  <h1>Ref<span>Guard</span></h1>
+  <p class="sub">Paste a bibliography (BibTeX or a plain reference list). Every entry is checked against
+  the OpenAlex registry: does the paper exist, do the title, authors, year, venue, and DOI belong to it,
+  and has it been retracted? No AI involved — pure registry lookup and comparison.</p>
+
+  <textarea id="input" placeholder="@article{key, title = {...}, ...}   —or—   Author, A. (2020). Title. Journal, 1(2), 3–4."></textarea>
+  <button id="go">Check references</button>
+  <div id="progress" hidden></div>
+  <div id="results"></div>
+
+  <p class="note">
+    Verdicts: <b>FABRICATED_CANDIDATE</b> = the DOI is registered nowhere (checked at OpenAlex and doi.org).
+    <b>INCONSISTENT</b> = the entry's fields don't match the real paper (wrong authors, year, venue, or mixed-up fields).
+    <b>RETRACTED</b> = the registry marks the paper retracted. <b>BENIGN_DRIFT</b> = formatting or online-first/print
+    differences. <b>UNVERIFIED</b> = not found anywhere; check by hand. <b>REGISTRY_UNREACHABLE</b> = network problem,
+    not evidence of fabrication — the check fails closed.
+    RefGuard verifies that entries describe real papers accurately; it cannot judge whether they are the
+    <i>right</i> papers to cite. Adapted from verification work by Katie Apker, Pedro Sant'Anna,
+    Scott Cunningham, and Dhuliawala et&nbsp;al. (2023, Chain-of-Verification).
+  </p>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const TIERS = {
+  FABRICATED_CANDIDATE:"b", INCONSISTENT:"b", RETRACTED:"b",
+  BENIGN_DRIFT:"r", UNVERIFIED:"r", REGISTRY_UNREACHABLE:"r",
+  CONSISTENT:"p",
+};
+$("go").addEventListener("click", async () => {
+  const input = $("input").value.trim();
+  if (!input) return;
+  $("go").disabled = true;
+  $("results").innerHTML = "";
+  $("progress").hidden = false;
+  $("progress").textContent = "Parsing…";
+  try {
+    const pr = await fetch("/api/parse", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({input})});
+    const parsed = await pr.json();
+    if (!pr.ok) { $("progress").textContent = "⚠️ " + (parsed.error || pr.status); return; }
+    const entries = parsed.entries;
+    const results = [];
+    for (let i = 0; i < entries.length; i++) {
+      $("progress").textContent = `Checking ${i+1} / ${entries.length}: ${entries[i].key}…`;
+      const ar = await fetch("/api/audit-entry", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({entry:entries[i]})});
+      results.push(ar.ok ? await ar.json() : {key:entries[i].key,verdict:"REGISTRY_UNREACHABLE",notes:["server error "+ar.status]});
+    }
+    renderResults(results);
+    $("progress").hidden = true;
+  } catch (e) {
+    $("progress").textContent = "⚠️ " + e;
+  } finally {
+    $("go").disabled = false;
+  }
+});
+function renderResults(results){
+  // fail closed: anything with an unknown verdict renders in the review tier
+  const tier = (r) => TIERS[r.verdict] ?? "r";
+  const groups = {b:[], r:[], p:[]};
+  for (const r of results) groups[tier(r)].push(r);
+  const box = $("results");
+  const section = (cls, label, items) => {
+    if (!items.length) return;
+    const div = document.createElement("div");
+    div.className = "tier";
+    div.innerHTML = `<h2>${label} (${items.length})</h2>`;
+    for (const r of items) {
+      const it = document.createElement("div");
+      it.className = "item " + cls;
+      it.innerHTML = `<span class="v">${esc(r.verdict)}</span><span class="k">${esc(r.key)}</span>` +
+        (r.truth_title ? `<div class="n">registry match: ${esc(r.truth_title)}</div>` : "") +
+        (r.notes && r.notes.length ? `<div class="n">${esc(r.notes.join("; "))}</div>` : "");
+      div.appendChild(it);
+    }
+    box.appendChild(div);
+  };
+  section("b", "🛑 Blocking", groups.b);
+  section("r", "⚠️ Review", groups.r);
+  section("p", "✅ Consistent", groups.p);
+}
+function esc(s){const d=document.createElement("span");d.textContent=String(s??"");return d.innerHTML;}
+</script>
+</body>
+</html>

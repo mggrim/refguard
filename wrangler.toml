@@ -1,0 +1,10 @@
+name = "refguard"
+main = "web/worker.ts"
+compatibility_date = "2026-08-01"
+
+[assets]
+directory = "web/public"
+binding = "ASSETS"
+
+# Optional: join the OpenAlex polite pool. Set as a secret or var at deploy time:
+#   wrangler secret put OPENALEX_MAILTO

@@ -1,0 +1,16 @@
+{
+  "name": "refguard",
+  "version": "0.1.0",
+  "description": "Deterministic reference-integrity auditing for academic manuscripts: fabricated-DOI detection, field-mixing checks, retraction flags. Fail-closed by design.",
+  "type": "module",
+  "license": "MIT",
+  "bin": { "refguard": "./src/cli.ts" },
+  "exports": { ".": "./src/core/index.ts" },
+  "scripts": {
+    "test": "bun test",
+    "audit": "bun src/cli.ts",
+    "web:dev": "bunx wrangler dev",
+    "web:deploy": "bunx wrangler deploy"
+  },
+  "keywords": ["citations", "bibliography", "verification", "hallucination", "bibtex", "openalex", "retraction"]
+}

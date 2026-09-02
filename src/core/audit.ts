@@ -75,6 +75,8 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
   }
   const base = {
     key: entry.key,
+    title: entry.title,
+    year: entry.year,
     local_id: local?.id ?? null,
     local_pdf: local?.pdf ?? null,
   };
@@ -152,6 +154,29 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
       };
     }
     const c = compare(entry, truth);
+    // A search-based match (no DOI anchor) that differs ONLY in year is more
+    // likely a different edition or an online-first record of the same work
+    // than a manuscript error — books and slow journals hit this constantly.
+    // Without a DOI we cannot be sure we matched the right record, so blocking
+    // would be overconfident: downgrade to review with an explicit note.
+    const viaDoi = Boolean(entry.doi) && truth.doi === entry.doi;
+    if (
+      c.verdict === "INCONSISTENT" &&
+      !viaDoi &&
+      c.notes.length > 0 &&
+      c.notes.every((n) => n.startsWith("year off by") || n.startsWith("title drift"))
+    ) {
+      return {
+        ...base,
+        verdict: "BENIGN_DRIFT",
+        notes: [
+          ...c.notes,
+          "matched by title/author search, not DOI — year gap likely a different edition or online-first record; confirm the year by hand",
+        ],
+        truth_source: truth.source,
+        truth_title: truth.title,
+      };
+    }
     return { ...base, verdict: c.verdict, notes: c.notes, truth_source: truth.source, truth_title: truth.title };
   } catch (e) {
     if (e instanceof RegistryUnreachable) {

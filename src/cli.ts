@@ -56,14 +56,15 @@ function render(results: AuditResult[], label: string): string {
   const review = results.filter((r) =>
     ["BENIGN_DRIFT", "UNVERIFIED", "REGISTRY_UNREACHABLE"].includes(r.verdict),
   );
+  const label_ = (r: AuditResult) => (r.title ? `${r.key} "${r.title.slice(0, 55)}"` : r.key);
   if (blocking.length) {
     lines.push(`🛑 BLOCKING (${blocking.length}):`);
-    for (const r of blocking) lines.push(`  [${r.verdict}] ${r.key}: ${r.notes.join("; ")}`);
+    for (const r of blocking) lines.push(`  [${r.verdict}] ${label_(r)}: ${r.notes.join("; ")}`);
     lines.push("");
   }
   if (review.length) {
     lines.push(`⚠️ REVIEW (${review.length}):`);
-    for (const r of review) lines.push(`  [${r.verdict}] ${r.key}: ${r.notes.join("; ")}`);
+    for (const r of review) lines.push(`  [${r.verdict}] ${label_(r)}: ${r.notes.join("; ")}`);
     lines.push("");
   }
   lines.push(`✅ CONSISTENT: ${counts["CONSISTENT"] ?? 0}`);

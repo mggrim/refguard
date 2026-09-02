@@ -93,13 +93,22 @@ function bibAuthorFamilies(author: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * A block only counts as a reference if a parenthesized (year) appears early,
+ * before any other parenthesis — real APA entries open with authors then (year),
+ * while table rows, appendix text, and quotes that merely contain a year do not.
+ * This keeps the parser from auditing a manuscript's tables as citations.
+ */
+const REF_SHAPE_RE = /^[^()]{0,250}\(\d{4}[a-z]?\)/;
+
 /** Heuristic parser for a pasted reference list (APA-shaped; one entry per line or paragraph). */
 export function parseTextRefs(text: string): RefEntry[] {
-  const blocks = text
+  const cleaned = text.replace(/ADDIN ZOTERO_BIBL.*?CSL_BIBLIOGRAPHY\s*/gs, "");
+  const blocks = cleaned
     .split(/\n\s*\n|\r\n\s*\r\n/)
     .flatMap((b) => (b.length > 400 && b.includes("\n") ? b.split("\n") : [b]))
     .map((b) => b.replace(/\s+/g, " ").trim())
-    .filter((b) => b.length > 40 && YEAR_RE.test(b));
+    .filter((b) => b.length > 40 && YEAR_RE.test(b) && REF_SHAPE_RE.test(b));
   return blocks.map((raw, idx) => {
     const doi = normDoi(raw.match(DOI_RE)?.[0] ?? "");
     const yearMatch = raw.match(/\((\d{4})[a-z]?\)/) ?? raw.match(/\b((19|20)\d{2})\b/);

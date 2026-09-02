@@ -116,6 +116,87 @@ describe("compare", () => {
   });
 });
 
+// ---------- real-manuscript lessons (2026-09-02 SMJ draft audit) ----------
+
+import { sanitizeSearchQuery } from "../src/core/registry.ts";
+
+describe("manuscript-audit regressions", () => {
+  test("search queries are sanitized: OpenAlex 400s on '?'", () => {
+    expect(sanitizeSearchQuery("Expecting the Unexpected? How SWAT Officers Handle Surprises")).not.toContain("?");
+  });
+
+  test("table rows and appendix quotes are not parsed as references", () => {
+    const junk = [
+      "Source Description Outcome/purpose Archival data Searchable internal emails (2,219 email threads; 2013-2020) something",
+      "A2 finishes his PhD program and leaves the city; board selects a new administrator (A3) who is not aligned 2016",
+      "The calendar-partition logic of the charter, applied to a named individual with zero discretion.: 2017 onwards",
+    ].join("\n\n");
+    expect(parseTextRefs(junk)).toHaveLength(0);
+  });
+
+  test("real APA entries still parse alongside junk", () => {
+    const mixed =
+      "Bechky, B. A., & Okhuysen, G. A. (2011). Expecting the unexpected? How SWAT officers and film crews handle surprises. Academy of Management Journal, 54(2), 239-261.\n\n" +
+      "Source Description Outcome/purpose Archival data Searchable internal emails (2,219 email threads; 2013-2020) x";
+    const es = parseTextRefs(mixed);
+    expect(es).toHaveLength(1);
+    expect(es[0]!.authors).toEqual(["Bechky", "Okhuysen"]);
+  });
+
+  test("Zotero field-code junk is stripped from the first entry", () => {
+    const es = parseTextRefs(
+      'ADDIN ZOTERO_BIBL {"uncited":[],"omitted":[],"custom":[]} CSL_BIBLIOGRAPHY Alvesson, M., & Skoldberg, K. (2017). Reflexive methodology: New vistas for qualitative research. Sage.',
+    );
+    expect(es[0]!.authors[0]).toBe("Alvesson");
+  });
+
+  test("search-based match with year-only gap downgrades to review (edition/online-first)", async () => {
+    const work = {
+      display_name: "Case Study Research: Design and Methods",
+      publication_year: 1984,
+      primary_location: { source: { display_name: "" } },
+      doi: "",
+      authorships: [{ author: { display_name: "Robert K. Yin" } }],
+      is_retracted: false,
+      id: "W1",
+    };
+    const r = await auditEntry(
+      { key: "yin", title: "Case study research: Design and methods", authors: ["Yin"], year: "1994", journal: "", doi: "", raw: "" },
+      {
+        fetchFn: (async (input: any) => {
+          const url = String(input);
+          if (url.includes("works?search")) return new Response(JSON.stringify({ results: [work] }), { status: 200 });
+          throw new TypeError("unexpected fetch " + url);
+        }) as typeof fetch,
+      },
+    );
+    expect(r.verdict).toBe("BENIGN_DRIFT");
+    expect(r.notes.join(" ")).toContain("edition");
+  });
+
+  test("DOI-anchored year gap of 2+ still blocks", async () => {
+    const r = await auditEntry(entry({ year: "1997" }), {
+      fetchFn: (async (input: any) => {
+        const url = String(input);
+        if (url.includes("works/doi:"))
+          return new Response(
+            JSON.stringify({
+              display_name: truth.title,
+              publication_year: 1999,
+              primary_location: { source: { display_name: truth.journal } },
+              doi: "https://doi.org/" + truth.doi,
+              authorships: [{ author: { display_name: "Ezra Zuckerman" } }],
+              is_retracted: false,
+            }),
+            { status: 200 },
+          );
+        throw new TypeError("unexpected " + url);
+      }) as typeof fetch,
+    });
+    expect(r.verdict).toBe("INCONSISTENT");
+  });
+});
+
 // ---------- fail-closed registry behavior (stubbed fetch, no network) ----------
 
 function fetchStub(handler: (url: string) => Response | null): typeof fetch {

@@ -3,6 +3,10 @@ import { authorOverlap, normDoi, titleSim } from "./match.ts";
 
 export class RegistryUnreachable extends Error {}
 
+export function sanitizeSearchQuery(q: string): string {
+  return q.replace(/[?&|!^~*:\\/]/g, " ").replace(/\s+/g, " ").trim();
+}
+
 export interface RegistryOptions {
   /** Injectable for tests and for platforms with custom fetch. */
   fetchFn?: typeof fetch;
@@ -57,7 +61,8 @@ export async function openalexByDoi(doi: string, opts: RegistryOptions = {}): Pr
 }
 
 export async function openalexSearch(entry: RefEntry, opts: RegistryOptions = {}): Promise<Truth | null> {
-  const q = entry.title || entry.raw.slice(0, 200);
+  // OpenAlex's search endpoint returns HTTP 400 on queries containing '?' (even encoded)
+  const q = sanitizeSearchQuery(entry.title || entry.raw.slice(0, 200));
   const data: any = await openalexGet(
     `https://api.openalex.org/works?search=${encodeURIComponent(q)}&per-page=5`,
     opts,

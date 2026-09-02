@@ -37,6 +37,9 @@ export interface Truth {
 
 export interface AuditResult {
   key: string;
+  /** The entry's own claimed title/year, echoed for reporting. */
+  title: string;
+  year: string;
   verdict: Verdict;
   notes: string[];
   truth_source: string | null;

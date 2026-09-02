@@ -8,7 +8,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { LocalHit, LocalLibrary, RefEntry } from "./core/types.ts";
-import { normDoi, titleSim } from "./core/match.ts";
+import { authorOverlap, normDoi, titleSim } from "./core/match.ts";
 
 export class ZoteroLibrary implements LocalLibrary {
   private db: Database;
@@ -31,11 +31,34 @@ export class ZoteroLibrary implements LocalLibrary {
       }
     }
     if (entry.title) {
-      for (const id of this.fieldQuery("title", entry.title, true)) return this.item(id);
-      for (const id of this.fieldQuery("title", entry.title.slice(0, 60), false)) {
+      // Score every candidate rather than taking the first row back. An exact title
+      // match is not unique: "Design thinking" is the title of several unrelated
+      // items, and returning whichever one the query listed first reported a good
+      // reference as INCONSISTENT against a paper by a different author.
+      const ids = [
+        ...this.fieldQuery("title", entry.title, true),
+        ...this.fieldQuery("title", entry.title.slice(0, 60), false),
+      ];
+      const seen = new Set<number>();
+      let best: LocalHit | null = null;
+      let bestScore = -1;
+      for (const id of ids) {
+        if (seen.has(id)) continue;
+        seen.add(id);
         const item = this.item(id);
-        if (titleSim(item.title, entry.title) >= 0.75) return item;
+        if (titleSim(item.title, entry.title) < 0.75) continue;
+        const overlap = authorOverlap(entry.authors, item.authors);
+        let score = overlap >= 0 ? overlap : 0;
+        if (entry.year && item.year && Math.abs(Number(entry.year) - Number(item.year)) <= 1) score += 0.1;
+        if (score > bestScore) {
+          bestScore = score;
+          best = item;
+        }
       }
+      // A short generic title matched on words alone is not evidence of anything.
+      // Require either a distinctive title or an author in common.
+      const distinctive = entry.title.trim().split(/\s+/).length >= 5;
+      if (best && (bestScore > 0 || distinctive)) return best;
     }
     return null;
   }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseBib, parseTextRefs } from "../src/core/parse.ts";
+import { parseBib, parseTextRefs, trimDoiTail } from "../src/core/parse.ts";
 import { authorOverlap, journalMatch, titleSim } from "../src/core/match.ts";
 import { auditEntry, compare } from "../src/core/audit.ts";
 import type { RefEntry, Truth } from "../src/core/types.ts";
@@ -248,4 +248,26 @@ describe("auditEntry fail-closed", () => {
     });
     expect(r.verdict).toBe("UNVERIFIED");
   });
+});
+
+test("text entries get readable author-year keys, deduped", () => {
+  const refs = parseTextRefs([
+    "Tolbert, P. S., & Zucker, L. G. (1983). Institutional sources of change in the formal structure of organizations. Administrative Science Quarterly, 28(1), 22-39.",
+    "Tolbert, P. S. (1983). A different paper published in the very same year by the same author. Some Other Journal, 1(1), 1-9.",
+    "(1994). A block with no author segment at all but plenty of length to pass the filter. Journal, 2(2), 2-9.",
+  ].join("\n\n"));
+  expect(refs.map((r) => r.key)).toEqual(["tolbert1983", "tolbert1983a", "ref3"]);
+});
+
+test("a DOI containing parentheses survives text parsing intact", () => {
+  const [ref] = parseTextRefs(
+    "Wakefield, A. J., & Murch, S. H. (1998). Ileal-lymphoid-nodular hyperplasia and pervasive developmental disorder in children. The Lancet, 351(9103), 637-641. https://doi.org/10.1016/S0140-6736(97)11096-0",
+  );
+  expect(ref?.doi).toBe("10.1016/s0140-6736(97)11096-0");
+});
+
+test("trailing sentence punctuation and unbalanced parens are trimmed from a DOI", () => {
+  expect(trimDoiTail("10.5465/amj.2010.1234.")).toBe("10.5465/amj.2010.1234");
+  expect(trimDoiTail("10.5465/amj.2010.1234)")).toBe("10.5465/amj.2010.1234");
+  expect(trimDoiTail("10.1016/S0140-6736(97)11096-0")).toBe("10.1016/S0140-6736(97)11096-0");
 });

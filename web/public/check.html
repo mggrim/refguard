@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Check a bibliography &middot; RefGuard</title>
+<meta name="description" content="Paste BibTeX or a plain reference list. Each entry is checked separately against OpenAlex and the DOI registry, and a verdict appears as soon as the registry answers.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/refguard.css">
+</head>
+<body>
+
+<header class="mast">
+  <a class="wordmark" href="/"><b>Ref</b>Guard <small>Registry check</small></a>
+  <nav>
+    <a href="/#how">How it works</a>
+    <a href="/#verdicts">Verdicts</a>
+  </nav>
+</header>
+
+<section class="pagehead">
+  <div class="wrap">
+    <div>
+      <h1>Paste your bibliography. <em>Get a verdict on every entry.</em></h1>
+      <p>Each entry is checked on its own against OpenAlex and the DOI registry, so results arrive one at a time. Nothing is skipped and nothing is summarised.</p>
+    </div>
+    <div class="facts">No account &middot; nothing stored<br>Up to 300 entries per run<br>No AI in the audit</div>
+  </div>
+</section>
+
+<section class="bench">
+  <div class="wrap">
+
+    <form class="audit" id="audit" novalidate>
+      <fieldset>
+        <legend>Step 1 &nbsp; Your references</legend>
+
+        <div class="field">
+          <div class="lab">
+            <b><label for="input">Bibliography</label></b>
+            <button class="link" id="sample" type="button">Load a sample with planted errors</button>
+          </div>
+          <span class="help" id="input-help">Paste BibTeX or a plain reference list, with one reference per paragraph.</span>
+          <textarea id="input" name="input" aria-describedby="input-help" spellcheck="false" placeholder="Tolbert, P. S., &amp; Zucker, L. G. (1983). Institutional sources of change in the formal structure of organizations. Administrative Science Quarterly, 28(1), 22-39. https://doi.org/10.2307/2392383"></textarea>
+          <div class="under">
+            <span class="formats"><span>BibTeX</span><span>Plain list</span></span>
+            <span id="count">0 lines</span>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="go" type="submit">Check references</button>
+          <button class="link" id="reset" type="button">Clear the form</button>
+        </div>
+      </fieldset>
+    </form>
+
+    <div class="ledger" aria-live="polite">
+      <div class="ledger-head">
+        <h2>Results</h2>
+        <div class="tally" id="tally"><span class="b"><b>0</b> blocking</span><span class="r"><b>0</b> review</span><span class="p"><b>0</b> consistent</span></div>
+      </div>
+      <div class="progress"><i id="bar"></i></div>
+      <div class="status" id="status"></div>
+      <p class="empty" id="empty">Paste a bibliography to begin. Each verdict appears as soon as the registry answers.</p>
+      <div class="group b" id="g-b" hidden><h3>Blocking</h3><div class="rows"></div></div>
+      <div class="group r" id="g-r" hidden><h3>Review by hand</h3><div class="rows"></div></div>
+      <div class="group p" id="g-p" hidden><h3>Consistent</h3><div class="rows"></div></div>
+      <div class="cert" id="cert">
+        <div class="big" id="cert-stamp"></div>
+        <div>
+          <p id="cert-text"></p>
+          <div class="tools"><button class="link" id="copy" type="button">Copy report</button><a class="link" href="/#verdicts">What the verdicts mean</a></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<footer class="colophon">
+  <div class="wrap">
+    <p>RefGuard checks whether each reference accurately describes a real paper. It cannot judge whether that paper is the right one to cite. Registry data from OpenAlex and doi.org.</p>
+    <p>MIT licensed &middot; <a href="/">RefGuard home</a></p>
+  </div>
+</footer>
+
+<script src="/check.js"></script>
+</body>
+</html>

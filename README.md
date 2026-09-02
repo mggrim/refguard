@@ -48,6 +48,8 @@ bun run web:dev      # local preview
 bun run web:deploy   # your Cloudflare account
 ```
 
+The landing page at `/` explains the check; `/check` is the tool itself.
+
 ## Claude Code plugin
 
 `plugin/` contains a skill (`refguard`) and an independent `citation-context-verifier` agent implementing Chain-of-Verification claim checking: each verifier is spawned in a fresh context that never sees the manuscript, receives one claim plus the cited paper's text, and must return a verdict (`SUPPORTED` / `DRIFT` / `WRONG_PAPER` / `UNSUPPORTED`) with a quote- or page-cited rationale.

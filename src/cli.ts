@@ -17,6 +17,7 @@ import {
   auditAll,
   BLOCKING_VERDICTS,
   DOI_RE,
+  trimDoiTail,
   normDoi,
   parseBib,
   parseTextRefs,
@@ -86,7 +87,7 @@ async function main(): Promise<number> {
       return 2;
     }
     const entry: RefEntry = DOI_RE.test(locate)
-      ? { key: "q", title: "", authors: [], year: "", journal: "", doi: normDoi(locate), raw: locate }
+      ? { key: "q", title: "", authors: [], year: "", journal: "", doi: normDoi(trimDoiTail(locate)), raw: locate }
       : { key: "q", title: locate, authors: [], year: "", journal: "", doi: "", raw: locate };
     const hit = zotero.lookup(entry);
     console.log(JSON.stringify(hit ?? { found: false }, null, 2));

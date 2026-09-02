@@ -17,7 +17,24 @@ export interface RegistryOptions {
   maxRetries?: number;
   /** First backoff step after a 429; doubles per attempt. Lowered in tests. */
   retryBaseMs?: number;
+  /**
+   * Shared across one run. When the registry hard-throttles, retrying every entry
+   * turns a 90-second audit into a 20-minute one and still answers nothing, so the
+   * first exhausted entry trips the breaker and the rest fail fast and honestly.
+   */
+  breaker?: Breaker;
 }
+
+export interface Breaker {
+  trippedUntil: number;
+  consecutive: number;
+}
+
+export const newBreaker = (): Breaker => ({ trippedUntil: 0, consecutive: 0 });
+
+/** Consecutive exhausted entries before the rest of the run stops retrying. */
+const BREAKER_TRIP_AFTER = 2;
+const BREAKER_COOLDOWN_MS = 120_000;
 
 const MAX_RETRIES = 4;
 const RETRY_BASE_MS = 1000;
@@ -28,6 +45,10 @@ async function openalexGet(url: string, opts: RegistryOptions, attempt = 0): Pro
   const full = opts.mailto
     ? `${url}${url.includes("?") ? "&" : "?"}mailto=${encodeURIComponent(opts.mailto)}`
     : url;
+  const breaker = opts.breaker;
+  if (breaker && Date.now() < breaker.trippedUntil) {
+    throw new RegistryUnreachable("registry is rate limiting this run; skipped without retrying");
+  }
   let resp: Response;
   try {
     resp = await f(full, {
@@ -44,6 +65,9 @@ async function openalexGet(url: string, opts: RegistryOptions, attempt = 0): Pro
     // the whole point of REGISTRY_UNREACHABLE is that it says "cannot certify".
     const limit = opts.maxRetries ?? MAX_RETRIES;
     if (attempt >= limit) {
+      if (breaker && ++breaker.consecutive >= BREAKER_TRIP_AFTER) {
+        breaker.trippedUntil = Date.now() + BREAKER_COOLDOWN_MS;
+      }
       throw new RegistryUnreachable(`rate limited by OpenAlex (HTTP 429 after ${limit + 1} attempts)`);
     }
     const base = opts.retryBaseMs ?? RETRY_BASE_MS;
@@ -55,6 +79,7 @@ async function openalexGet(url: string, opts: RegistryOptions, attempt = 0): Pro
     return openalexGet(url, opts, attempt + 1);
   }
   if (!resp.ok) throw new RegistryUnreachable(`HTTP ${resp.status}`);
+  if (breaker) breaker.consecutive = 0;
   return resp.json();
 }
 

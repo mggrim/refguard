@@ -193,8 +193,14 @@ export function parseTextRefs(text: string): RefEntry[] {
     // the date, not the start of the title.
     const afterYear = (yearStart >= 0 ? raw.slice(yearEnd) : raw)
       .replace(/^[a-z]?,\s*\p{Lu}\p{Ll}+\.?(?:\s+\d{1,2})?/u, "");
-    const title = (afterYear.replace(/^[.\s]+/, "").split(/(?<=[a-z0-9])\.\s/)[0] ?? "").trim();
-    const authors = [...authorSeg.matchAll(/([A-Z][A-Za-z'’-]+),/g)].map((m) => m[1]!);
+    // The title runs to the first sentence terminator followed by the venue. It may
+    // end in "?" or "!" ("Do firms in clusters innovate more? Research Policy, 27(5)"),
+    // which a period-only split swallowed the journal into. A question or exclamation
+    // mark belongs to the title and is kept; a full stop is punctuation and is not.
+    const rest = afterYear.replace(/^[.\s]+/, "");
+    const cut = rest.match(/^(.*?[.?!])\s+[A-Z(]/s);
+    const title = (cut?.[1] ?? rest).replace(/\.$/, "").trim();
+    const authors = familyNames(authorSeg);
     return { key: citationKey(authors[0], year, idx, used), title, authors, year, journal: "", doi, raw };
   });
 }
@@ -226,4 +232,26 @@ function citationKey(author: string | undefined, year: string, idx: number, used
 export function referencesSection(text: string): string | null {
   const m = text.match(/\n[ \t]*(?:REFERENCES|References|REFERENCE LIST|Bibliography|BIBLIOGRAPHY|Works Cited|WORKS CITED)\b[^\n]{0,60}\n/);
   return m ? text.slice(m.index! + m[0].length) : null;
+}
+
+/**
+ * Family names from an author segment. Two shapes appear in real bibliographies
+ * and they put the surname on opposite sides of the initials:
+ *
+ *   APA / AoM     "Besharov, M. L., & Smith, W. K."   surname, comma, initials
+ *   compact       "Besharov ML, Smith WK."            surname, space, initials
+ *
+ * Reading the compact shape with a comma-anchored rule returned the INITIALS as
+ * the surname ("ML", "WK"), which mismatched every registry record and reported a
+ * dozen perfectly good references as INCONSISTENT. Periods on the initials are
+ * what separate the shapes, so the punctuated form is tried first.
+ */
+export function familyNames(authorSeg: string): string[] {
+  const punctuated = [...authorSeg.matchAll(/([\p{Lu}][\p{L}\p{M}'\u2019-]+),\s*(?:[\p{Lu}]\.\s*)+/gu)]
+    .map((m) => m[1]!);
+  if (punctuated.length) return punctuated;
+  const compact = [...authorSeg.matchAll(/([\p{Lu}][\p{L}\p{M}'\u2019-]+)\s+[\p{Lu}]{1,3}(?=[,.]|\s|$)/gu)]
+    .map((m) => m[1]!);
+  if (compact.length) return compact;
+  return [...authorSeg.matchAll(/([\p{Lu}][\p{L}\p{M}'\u2019-]+),/gu)].map((m) => m[1]!);
 }

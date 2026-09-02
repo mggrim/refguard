@@ -1,6 +1,6 @@
 import type { AuditResult, LocalHit, LocalLibrary, RefEntry, Truth, Verdict } from "./types.ts";
 import { authorOverlap, journalMatch, titleSim } from "./match.ts";
-import { doiHandleExists, openalexByDoi, openalexSearch, RegistryUnreachable, type RegistryOptions } from "./registry.ts";
+import { doiHandleExists, newBreaker, openalexByDoi, openalexSearch, RegistryUnreachable, type RegistryOptions } from "./registry.ts";
 
 export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; notes: string[] } {
   const notes: string[] = [];
@@ -120,7 +120,54 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
         }
       }
     }
-    if (!truth) truth = await openalexSearch(entry, opts);
+    // A registry outage must not throw away local evidence. Bibliographies in
+    // management journals carry almost no DOIs, so every entry rides on search —
+    // and when search is down, a Zotero library can still contradict an entry.
+    let registryDown = false;
+    if (!truth) {
+      try {
+        truth = await openalexSearch(entry, opts);
+      } catch (e) {
+        if (!(e instanceof RegistryUnreachable) || !local) throw e;
+        registryDown = true;
+      }
+    }
+    if (!truth && local && registryDown) {
+      const c = compare(entry, {
+        source: "local",
+        title: local.title,
+        year: local.year,
+        journal: local.journal,
+        doi: local.doi,
+        authors: local.authors,
+        retracted: false,
+      });
+      // A contradiction against your own library is evidence regardless of the
+      // registry. Agreement is not: with no registry record there is no
+      // retraction check and no second opinion, so it cannot be certified.
+      const contradicted = c.verdict === "INCONSISTENT";
+      return {
+        ...base,
+        verdict: contradicted ? "INCONSISTENT" : "REGISTRY_UNREACHABLE",
+        notes: [
+          ...c.notes,
+          contradicted
+            ? "registry unreachable; this mismatch is against your local library metadata"
+            : "registry unreachable; matches your local library, which is not certification (no registry record, no retraction check)",
+        ],
+        truth_source: "local",
+        truth_title: local.title,
+      };
+    }
+    if (!truth && registryDown) {
+      return {
+        ...base,
+        verdict: "REGISTRY_UNREACHABLE",
+        notes: ["registry unreachable and not in the local library; NOT evidence of fabrication"],
+        truth_source: null,
+        truth_title: null,
+      };
+    }
     if (!truth && local) {
       const c = compare(entry, {
         source: "local",
@@ -197,8 +244,10 @@ export async function auditAll(
   opts: AuditOptions & { delayMs?: number } = {},
 ): Promise<AuditResult[]> {
   const results: AuditResult[] = [];
+  // One breaker for the whole run, so a hard throttle stops the retry storm.
+  const opts_ = { ...opts, breaker: opts.breaker ?? newBreaker() };
   for (const entry of entries) {
-    results.push(await auditEntry(entry, opts));
+    results.push(await auditEntry(entry, opts_));
     if (opts.delayMs) await new Promise((r) => setTimeout(r, opts.delayMs));
   }
   return results;

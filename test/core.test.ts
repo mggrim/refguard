@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { parseBib, parseTextRefs, referencesSection, trimDoiTail } from "../src/core/parse.ts";
+import { familyNames, parseBib, parseTextRefs, referencesSection, trimDoiTail } from "../src/core/parse.ts";
 import { authorOverlap, journalMatch, titleSim } from "../src/core/match.ts";
-import { auditEntry, compare } from "../src/core/audit.ts";
+import { auditAll, auditEntry, compare } from "../src/core/audit.ts";
 import { openalexByDoi, RegistryUnreachable } from "../src/core/registry.ts";
 import { BLOCKING_VERDICTS } from "../src/core/types.ts";
-import type { RefEntry, Truth } from "../src/core/types.ts";
+import type { LocalHit, RefEntry, Truth } from "../src/core/types.ts";
 
 // ---------- parsing ----------
 
@@ -392,4 +392,82 @@ describe("finding the references section in a manuscript", () => {
     const prose = "Smith (2010) argued that incubators shape venture identity in ways founders rarely anticipate.";
     expect(parseTextRefs(prose).length).toBe(1);
   });
+});
+
+describe("a registry outage still uses the local library", () => {
+  const down = (async () => new Response("", { status: 429 })) as unknown as typeof fetch;
+  const opts = { fetchFn: down, maxRetries: 0, retryBaseMs: 1 };
+  const entry: RefEntry = {
+    key: "battilana2010", title: "Building Sustainable Hybrid Organizations",
+    authors: ["Battilana", "Dorado"], year: "2010",
+    journal: "Academy of Management Journal", doi: "", raw: "x",
+  };
+  const libraryHit = (over: Partial<LocalHit> = {}) => ({
+    lookup: () => ({
+      id: 1, title: "Building Sustainable Hybrid Organizations",
+      year: "2010", journal: "Academy of Management Journal",
+      authors: ["Battilana", "Dorado"], doi: "", pdf: null, ...over,
+    }),
+  });
+
+  test("agreement with the library cannot certify: it stays unreachable", async () => {
+    const r = await auditEntry(entry, { ...opts, local: libraryHit() });
+    expect(r.verdict).toBe("REGISTRY_UNREACHABLE");
+    expect(r.truth_source).toBe("local");
+    expect(r.notes.join(" ")).toContain("not certification");
+  });
+
+  test("a contradiction against the library is still reported", async () => {
+    const r = await auditEntry(entry, { ...opts, local: libraryHit({ authors: ["Eisenhardt"], year: "1989" }) });
+    expect(r.verdict).toBe("INCONSISTENT");
+    expect(r.truth_source).toBe("local");
+  });
+
+  test("with no library at all the entry fails closed", async () => {
+    const r = await auditEntry(entry, opts);
+    expect(r.verdict).toBe("REGISTRY_UNREACHABLE");
+    expect(r.truth_source).toBeNull();
+  });
+});
+
+test("a hard throttle trips the breaker so the rest of the run fails fast", async () => {
+  let calls = 0;
+  const fetchFn = (async () => { calls++; return new Response("", { status: 429 }); }) as unknown as typeof fetch;
+  const entries: RefEntry[] = Array.from({ length: 8 }, (_, i) => ({
+    key: `e${i}`, title: `Paper number ${i}`, authors: ["Doe"], year: "2020",
+    journal: "Journal", doi: "", raw: "x",
+  }));
+  const started = Date.now();
+  const results = await auditAll(entries, { fetchFn, maxRetries: 1, retryBaseMs: 1 });
+  expect(results.every((r) => r.verdict === "REGISTRY_UNREACHABLE")).toBe(true);
+  // Two entries exhaust their retries, then the breaker skips the other six
+  // without a single further request.
+  expect(calls).toBe(4);
+  expect(Date.now() - started).toBeLessThan(2000);
+});
+
+describe("surnames are read from either author shape", () => {
+  test("compact initials do not become the surname", () => {
+    // This shape produced author lists of ["ML"], ["WK"], ["RB"] and reported a
+    // dozen correct references as INCONSISTENT against the registry.
+    expect(familyNames("Besharov ML, Smith WK. ")).toEqual(["Besharov", "Smith"]);
+    expect(familyNames("Battilana J, Dorado S. ")).toEqual(["Battilana", "Dorado"]);
+    expect(familyNames("Greenwood R, Raynard M, Kodeih F. ")).toEqual(["Greenwood", "Raynard", "Kodeih"]);
+  });
+
+  test("the punctuated shape still wins where both could match", () => {
+    expect(familyNames("Acs, Z. J., & Audretsch, D. B. ")).toEqual(["Acs", "Audretsch"]);
+    expect(familyNames("van Werven, R., Bouwmeester, O., & Cornelissen, J. P. ")).toEqual(["Werven", "Bouwmeester", "Cornelissen"]);
+  });
+
+  test("end to end, a compact entry keeps its real surnames", () => {
+    const [ref] = parseTextRefs("Besharov ML, Smith WK. 2014. Multiple institutional logics in organizations: Explaining their varied nature. Academy of Management Review 39(3): 364-381.");
+    expect(ref?.authors).toEqual(["Besharov", "Smith"]);
+    expect(ref?.key).toBe("besharov2014");
+  });
+});
+
+test("a title ending in a question mark does not swallow the journal", () => {
+  const [ref] = parseTextRefs("Baptista, R., & Swann, P. 1998. Do firms in clusters innovate more? Research Policy, 27(5): 525-540.");
+  expect(ref?.title).toBe("Do firms in clusters innovate more?");
 });

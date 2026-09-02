@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { parseBib, parseTextRefs, trimDoiTail } from "../src/core/parse.ts";
+import { parseBib, parseTextRefs, referencesSection, trimDoiTail } from "../src/core/parse.ts";
 import { authorOverlap, journalMatch, titleSim } from "../src/core/match.ts";
 import { auditEntry, compare } from "../src/core/audit.ts";
+import { openalexByDoi, RegistryUnreachable } from "../src/core/registry.ts";
+import { BLOCKING_VERDICTS } from "../src/core/types.ts";
 import type { RefEntry, Truth } from "../src/core/types.ts";
 
 // ---------- parsing ----------
@@ -270,4 +272,124 @@ test("trailing sentence punctuation and unbalanced parens are trimmed from a DOI
   expect(trimDoiTail("10.5465/amj.2010.1234.")).toBe("10.5465/amj.2010.1234");
   expect(trimDoiTail("10.5465/amj.2010.1234)")).toBe("10.5465/amj.2010.1234");
   expect(trimDoiTail("10.1016/S0140-6736(97)11096-0")).toBe("10.1016/S0140-6736(97)11096-0");
+});
+
+describe("Academy of Management reference style (bare year)", () => {
+  const aom = [
+    "Acs, Z. J., & Audretsch, D. B. 1988. Innovation in large and small firms: An empirical analysis. The American Economic Review, 78(4): 678-690.",
+    "Baptista, R., & Swann, P. 1998. Do firms in clusters innovate more? Research Policy, 27(5): 525-540.",
+    "Weick, K. E. 1995. Sensemaking in organizations. Thousand Oaks, CA: Sage.",
+  ].join("\n\n");
+
+  test("parses entries that carry no parenthesised year", () => {
+    const refs = parseTextRefs(aom);
+    expect(refs.length).toBe(3);
+    expect(refs[0]?.year).toBe("1988");
+    expect(refs[0]?.authors).toEqual(["Acs", "Audretsch"]);
+    expect(refs[0]?.title).toBe("Innovation in large and small firms: An empirical analysis");
+    expect(refs[0]?.key).toBe("acs1988");
+    expect(refs[2]?.title).toBe("Sensemaking in organizations");
+  });
+
+  test("still refuses prose and table rows that merely contain a year", () => {
+    const notRefs = [
+      "The firm doubled its headcount in 1998. Managers described the period as chaotic and said little else about it.",
+      "Site B | 1998 | 42 employees | interviews conducted across three visits to the plant during the expansion",
+      "As one founder put it, we had no idea what 1998 would bring, and the board was in no mood to find out.",
+    ].join("\n\n");
+    expect(parseTextRefs(notRefs)).toEqual([]);
+  });
+
+  test("strips the EndNote field code Word leaves before the first entry", () => {
+    const refs = parseTextRefs(" ADDIN EN.REFLIST Acs, Z. J., & Audretsch, D. B. 1988. Innovation in large and small firms: An empirical analysis. The American Economic Review, 78(4): 678-690.");
+    expect(refs.length).toBe(1);
+    expect(refs[0]?.authors).toEqual(["Acs", "Audretsch"]);
+  });
+});
+
+describe("author-run shapes found in real drafts", () => {
+  const cases: Array<[string, string, string[]]> = [
+    ["accented surname", "Barthelemy, J. 2017. The impact of technical consultants on the quality of their clients' products. Strategic Management Journal, 38(5): 1002-1019.", ["Barthelemy"]],
+    ["multi-word surname", "Van de Ven, A. H. 1986. Central problems in the management of innovation. Management Science, 32(5): 590-607.", ["Ven"]],
+    ["initials without periods", "Battilana J, Dorado S. 2010. Building sustainable hybrid organizations: The case of commercial microfinance organizations. Academy of Management Journal 53(6): 1419-1440.", []],
+    ["paired initials", "Besharov ML, Smith WK. 2014. Multiple institutional logics in organizations: Explaining their varied nature and implications. Academy of Management Review 39(3): 364-381.", []],
+  ];
+  for (const [name, raw, authors] of cases) {
+    test(name, () => {
+      const refs = parseTextRefs(raw);
+      expect(refs.length).toBe(1);
+      expect(refs[0]?.year.length).toBe(4);
+      if (authors.length) expect(refs[0]?.authors).toEqual(authors);
+    });
+  }
+});
+
+describe("more author-run shapes from real drafts", () => {
+  const cases: Array<[string, string]> = [
+    ["lowercase particle", "van Werven, R., Bouwmeester, O., & Cornelissen, J. P. 2015. The power of arguments: How entrepreneurs convince stakeholders. International Small Business Journal, 33(1): 616-628."],
+    ["et al.", "Gehman, J., Glaser, V. L., Eisenhardt, K. M., Gioia, D., Langley, A., et al. 2018. Finding theory-method fit: A comparison of three qualitative approaches. Journal of Management Inquiry, 27(3): 284-300."],
+    ["edited volume", "Lockwood, C., & Soubliere, J.-F. (Eds.). 2022. Advances in cultural entrepreneurship. Bingley: Emerald Group Publishing."],
+    ["dated magazine piece", "Blank, S. 2013, May 1. Why the lean start-up changes everything. Harvard Business Review, 91(5): 63-72."],
+  ];
+  for (const [name, raw] of cases) {
+    test(name, () => {
+      const refs = parseTextRefs(raw);
+      expect(refs.length).toBe(1);
+      expect(refs[0]?.year.length).toBe(4);
+      expect(refs[0]?.title.length).toBeGreaterThan(10);
+    });
+  }
+});
+
+describe("rate limiting fails closed instead of hanging", () => {
+  const entry: RefEntry = {
+    key: "x", title: "Some Paper", authors: ["Doe"], year: "2020",
+    journal: "Some Journal", doi: "10.1234/abcd", raw: "x",
+  };
+  const alwaysRateLimited = () => {
+    let calls = 0;
+    const fetchFn = (async () => {
+      calls++;
+      return new Response("", { status: 429 });
+    }) as unknown as typeof fetch;
+    return { fetchFn, calls: () => calls };
+  };
+
+  test("openalexByDoi gives up after the retry budget", async () => {
+    const stub = alwaysRateLimited();
+    await expect(
+      openalexByDoi("10.1234/abcd", { fetchFn: stub.fetchFn, maxRetries: 2, retryBaseMs: 1 }),
+    ).rejects.toThrow(RegistryUnreachable);
+    expect(stub.calls()).toBe(3);   // the first attempt plus two retries, then it stops
+  });
+
+  test("a rate-limited entry audits to REGISTRY_UNREACHABLE, never to a pass", async () => {
+    const stub = alwaysRateLimited();
+    const r = await auditEntry(entry, { fetchFn: stub.fetchFn, maxRetries: 1, retryBaseMs: 1 });
+    expect(r.verdict).toBe("REGISTRY_UNREACHABLE");
+    expect(BLOCKING_VERDICTS).not.toContain(r.verdict);
+  });
+});
+
+describe("finding the references section in a manuscript", () => {
+  const body = "Intro paragraph about the study.\nMore body text here.\n";
+  const refs = "Acs, Z. J. 1988. Innovation in large and small firms. AER, 78(4): 678-690.\n";
+
+  test("finds a plain heading", () => {
+    expect(referencesSection(`${body}\nReferences\n${refs}`)?.trim()).toBe(refs.trim());
+  });
+
+  test("finds a heading that carries an author's note", () => {
+    expect(referencesSection(`${body}\nREFERENCES – TO RE DO; IGNORE\n${refs}`)?.trim()).toBe(refs.trim());
+  });
+
+  test("returns null when the draft has no reference list", () => {
+    expect(referencesSection(`${body}We reference prior work throughout the paper.\n`)).toBeNull();
+  });
+
+  test("a sentence opening with a citation is why the null matters", () => {
+    // Scanning a whole manuscript picks this up as if it were a bibliography entry.
+    const prose = "Smith (2010) argued that incubators shape venture identity in ways founders rarely anticipate.";
+    expect(parseTextRefs(prose).length).toBe(1);
+  });
 });

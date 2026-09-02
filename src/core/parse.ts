@@ -116,29 +116,83 @@ function bibAuthorFamilies(author: string): string[] {
 }
 
 /**
- * A block only counts as a reference if a parenthesized (year) appears early,
- * before any other parenthesis — real APA entries open with authors then (year),
- * while table rows, appendix text, and quotes that merely contain a year do not.
- * This keeps the parser from auditing a manuscript's tables as citations.
+ * A block only counts as a reference if it opens in one of the two author-date
+ * shapes below. Table rows, appendix text and quotes that merely contain a year
+ * match neither, which keeps the parser from auditing a manuscript's tables.
+ *
+ * APA and friends put the year in parentheses, early, before any other bracket:
+ *   Tolbert, P. S., & Zucker, L. G. (1983). Institutional sources of change...
  */
-const REF_SHAPE_RE = /^[^()]{0,250}\(\d{4}[a-z]?\)/;
+const REF_SHAPE_APA = /^[^()]{0,250}\(\d{4}[a-z]?\)/;
+
+/**
+ * Academy of Management style — the house style of AMJ, AMR, JOM and the Annals —
+ * puts a bare year after the authors, so a parenthesis-only test finds nothing in
+ * an entire AoM-formatted bibliography. Real drafts also mix in accented surnames,
+ * multi-word surnames, and initials with or without periods:
+ *   Acs, Z. J., & Audretsch, D. B. 1988. Innovation in large and small firms...
+ *   Barthelemy, J. 2017. The impact of technical consultants...
+ *   Van de Ven, A. H. 1986. Central problems in the management of innovation...
+ *   Battilana J, Dorado S. 2010. Building sustainable hybrid organizations...
+ */
+const AOM_OPENER =
+  /^(?:\p{Ll}{2,4}\s+)?(\p{Lu}[\p{L}\p{M}'\u2019.,&()\- ]{2,240}?)\b(?:19|20)\d{2}[a-z]?(?:,\s*\p{Lu}\p{Ll}+\.?(?:\s+\d{1,2})?)?\.\s/u;
+
+/** The author run ends in an initial, an "et al.", or an "(Eds.)". */
+const AOM_AUTHOR_TAIL = /(?:\p{Lu}{1,3}\.|al\.|\(Eds?\.\)\.?)\s*$/u;
+
+/**
+ * A reference is a name run followed by a year and a period. Requiring the run to
+ * end the way an author list ends is what separates it from a sentence that merely
+ * finishes on a year, such as "The firm doubled its headcount in 1998." The shapes
+ * below all appear in real submitted drafts:
+ *
+ *   Acs, Z. J., & Audretsch, D. B. 1988. Innovation in large and small firms...
+ *   Barthelemy, J. 2017. The impact of technical consultants...          (accents)
+ *   Van de Ven, A. H. 1986. Central problems in the management...   (multi-word)
+ *   Battilana J, Dorado S. 2010. Building sustainable hybrid...   (no periods)
+ *   van Werven, R., & Cornelissen, J. P. 2015. The power of arguments... (particle)
+ *   Gehman, J., ... Langley, A., et al. 2018. Finding theory-method fit...
+ *   Lockwood, C., & Soubliere, J.-F. (Eds.). 2022. Advances in...       (editors)
+ *   Blank, S. 2013, May 1. Why the lean start-up changes everything.   (dated)
+ *
+ * An institutional author with no initials ("World Bank. 2020. ...") is skipped
+ * rather than guessed at; every run reports how many entries it found.
+ */
+function looksLikeAomEntry(block: string): boolean {
+  const m = AOM_OPENER.exec(block);
+  return m ? AOM_AUTHOR_TAIL.test(m[1]!) : false;
+}
+
+const looksLikeReference = (b: string) => REF_SHAPE_APA.test(b) || looksLikeAomEntry(b);
 
 /** Heuristic parser for a pasted reference list (APA-shaped; one entry per line or paragraph). */
 export function parseTextRefs(text: string): RefEntry[] {
-  const cleaned = text.replace(/ADDIN ZOTERO_BIBL.*?CSL_BIBLIOGRAPHY\s*/gs, "");
+  // Word leaves the citation manager's field code inline; both wreck the first entry.
+  const cleaned = text
+    .replace(/ADDIN ZOTERO_BIBL.*?CSL_BIBLIOGRAPHY\s*/gs, "")
+    .replace(/ADDIN EN\.REFLIST\s*/g, "");
   const blocks = cleaned
     .split(/\n\s*\n|\r\n\s*\r\n/)
     .flatMap((b) => (b.length > 400 && b.includes("\n") ? b.split("\n") : [b]))
     .map((b) => b.replace(/\s+/g, " ").trim())
-    .filter((b) => b.length > 40 && YEAR_RE.test(b) && REF_SHAPE_RE.test(b));
+    .filter((b) => b.length > 40 && YEAR_RE.test(b) && looksLikeReference(b));
   const used = new Set<string>();
   return blocks.map((raw, idx) => {
     const doi = normDoi(trimDoiTail(raw.match(DOI_RE)?.[0] ?? ""));
     const yearMatch = raw.match(/\((\d{4})[a-z]?\)/) ?? raw.match(/\b((19|20)\d{2})\b/);
     const year = yearMatch ? (yearMatch[1] ?? yearMatch[0]!) : "";
-    const paren = raw.indexOf(`(${year}`);
-    const authorSeg = paren > 0 ? raw.slice(0, paren) : "";
-    const afterYear = paren > 0 ? raw.slice(raw.indexOf(")", paren) + 1) : raw;
+    // Split the block at the year, which sits between the authors and the title in
+    // both shapes: "… (1983). Title" and "… 1983. Title".
+    const paren = year ? raw.indexOf(`(${year}`) : -1;
+    const bare = year && paren < 0 ? raw.indexOf(year) : -1;
+    const yearStart = paren >= 0 ? paren : bare;
+    const yearEnd = paren >= 0 ? raw.indexOf(")", paren) + 1 : bare + year.length;
+    const authorSeg = yearStart > 0 ? raw.slice(0, yearStart) : "";
+    // A year may be qualified by a month and day ("2013, May 1."). That is part of
+    // the date, not the start of the title.
+    const afterYear = (yearStart >= 0 ? raw.slice(yearEnd) : raw)
+      .replace(/^[a-z]?,\s*\p{Lu}\p{Ll}+\.?(?:\s+\d{1,2})?/u, "");
     const title = (afterYear.replace(/^[.\s]+/, "").split(/(?<=[a-z0-9])\.\s/)[0] ?? "").trim();
     const authors = [...authorSeg.matchAll(/([A-Z][A-Za-z'’-]+),/g)].map((m) => m[1]!);
     return { key: citationKey(authors[0], year, idx, used), title, authors, year, journal: "", doi, raw };
@@ -160,4 +214,16 @@ function citationKey(author: string | undefined, year: string, idx: number, used
   }
   used.add(key);
   return key;
+}
+
+/**
+ * Find where a manuscript's reference list begins. The heading is matched on its
+ * own line and may carry a trailing note, because drafts really do say things like
+ * "REFERENCES - TO RE DO; IGNORE". Returns null when no heading is present, so the
+ * caller can say so rather than silently auditing the whole manuscript: prose that
+ * opens "Smith (2010) argued..." parses as a reference and produces junk entries.
+ */
+export function referencesSection(text: string): string | null {
+  const m = text.match(/\n[ \t]*(?:REFERENCES|References|REFERENCE LIST|Bibliography|BIBLIOGRAPHY|Works Cited|WORKS CITED)\b[^\n]{0,60}\n/);
+  return m ? text.slice(m.index! + m[0].length) : null;
 }

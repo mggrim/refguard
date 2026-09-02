@@ -17,6 +17,7 @@ import {
   auditAll,
   BLOCKING_VERDICTS,
   DOI_RE,
+  referencesSection,
   trimDoiTail,
   normDoi,
   parseBib,
@@ -43,10 +44,7 @@ async function extractDocxText(path: string): Promise<string> {
     .replace(/&gt;/g, ">");
 }
 
-function referencesSection(text: string): string {
-  const m = text.match(/\n\s*(References|Bibliography|Works Cited|REFERENCES)\s*\n/);
-  return m ? text.slice(m.index! + m[0].length) : text;
-}
+
 
 function render(results: AuditResult[], label: string): string {
   const counts: Record<string, number> = {};
@@ -106,11 +104,19 @@ async function main(): Promise<number> {
     entries = parseTextRefs(await Bun.file(textPath).text());
     label = textPath;
   } else if (docxPath) {
-    entries = parseTextRefs(referencesSection(await extractDocxText(docxPath)));
+    const docText = await extractDocxText(docxPath);
+    const refsSection = referencesSection(docText);
+    if (refsSection === null) {
+      console.error(
+        "note: no References heading found; scanning the whole document, which can pick up\n" +
+        "      sentences that open with a citation. Check the entries below against the draft.",
+      );
+    }
+    entries = parseTextRefs(refsSection ?? docText);
     label = docxPath;
   } else {
     console.error(
-      "usage: refguard --bib <file> | --text <file> | --docx <file> | --locate <title-or-doi> [--zotero <sqlite>] [--out <json>]",
+      "usage: refguard --bib <file> | --text <file> | --docx <file> | --locate <title-or-doi> [--zotero <sqlite>] [--out <json>] [--delay <ms>]",
     );
     return 2;
   }
@@ -120,10 +126,13 @@ async function main(): Promise<number> {
   }
   if (!zotero) console.error("note: no Zotero library found; auditing against registry only");
 
+  // OpenAlex throttles its search endpoint per IP, and a bibliography with no DOIs
+  // is nothing but search calls. --delay raises the gap between entries.
+  const delayMs = Number(arg("delay") ?? 120);
   const results = await auditAll(entries, {
     local: zotero,
     mailto: process.env.OPENALEX_MAILTO,
-    delayMs: 120,
+    delayMs: Number.isFinite(delayMs) && delayMs >= 0 ? delayMs : 120,
   });
 
   const outPath = arg("out");

@@ -13,9 +13,17 @@ export interface RegistryOptions {
   /** Joins the OpenAlex polite pool. Never hardcoded. */
   mailto?: string;
   timeoutMs?: number;
+  /** Attempts after a 429 before giving up. Kept low: the fail-closed verdict is the point. */
+  maxRetries?: number;
+  /** First backoff step after a 429; doubles per attempt. Lowered in tests. */
+  retryBaseMs?: number;
 }
 
-async function openalexGet(url: string, opts: RegistryOptions): Promise<unknown | null> {
+const MAX_RETRIES = 4;
+const RETRY_BASE_MS = 1000;
+const RETRY_CAP_MS = 30_000;
+
+async function openalexGet(url: string, opts: RegistryOptions, attempt = 0): Promise<unknown | null> {
   const f = opts.fetchFn ?? fetch;
   const full = opts.mailto
     ? `${url}${url.includes("?") ? "&" : "?"}mailto=${encodeURIComponent(opts.mailto)}`
@@ -31,8 +39,20 @@ async function openalexGet(url: string, opts: RegistryOptions): Promise<unknown 
   }
   if (resp.status === 404) return null;
   if (resp.status === 429) {
-    await new Promise((r) => setTimeout(r, 2000));
-    return openalexGet(url, opts);
+    // Retry, but a bounded number of times. This used to recurse without a limit,
+    // so a sustained rate limit hung the run forever instead of failing closed —
+    // the whole point of REGISTRY_UNREACHABLE is that it says "cannot certify".
+    const limit = opts.maxRetries ?? MAX_RETRIES;
+    if (attempt >= limit) {
+      throw new RegistryUnreachable(`rate limited by OpenAlex (HTTP 429 after ${limit + 1} attempts)`);
+    }
+    const base = opts.retryBaseMs ?? RETRY_BASE_MS;
+    const retryAfter = Number(resp.headers.get("retry-after"));
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? Math.min(retryAfter * 1000, RETRY_CAP_MS)
+      : Math.min(base * 2 ** attempt, RETRY_CAP_MS);
+    await new Promise((r) => setTimeout(r, waitMs));
+    return openalexGet(url, opts, attempt + 1);
   }
   if (!resp.ok) throw new RegistryUnreachable(`HTTP ${resp.status}`);
   return resp.json();

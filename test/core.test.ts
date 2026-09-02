@@ -498,3 +498,9 @@ describe("comparisons that used to fire on nothing", () => {
     expect(compare(entry, blankYear).verdict).not.toBe("INCONSISTENT");
   });
 });
+
+test("a compound surname matches its short form", () => {
+  expect(authorOverlap(["Lingo"], ["Long Lingo"])).toBe(1);
+  expect(authorOverlap(["O’Mahony"], ["O'Mahony"])).toBe(1);
+  expect(authorOverlap(["Brown"], ["Crilly"])).toBe(0);
+});

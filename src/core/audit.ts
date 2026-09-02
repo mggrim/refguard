@@ -150,15 +150,25 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
       // A contradiction against your own library is evidence regardless of the
       // registry. Agreement is not: with no registry record there is no
       // retraction check and no second opinion, so it cannot be certified.
-      const contradicted = c.verdict === "INCONSISTENT";
+      // Same rule as a search-based match: with no DOI anchor we cannot be sure we
+      // matched the right record, so a difference of year alone is a question for
+      // a human, not a blocking verdict. Books and reprints hit this constantly
+      // ("The Discovery of Grounded Theory", 1967 original against a 2009 reprint).
+      const yearOnly =
+        c.verdict === "INCONSISTENT" &&
+        c.notes.length > 0 &&
+        c.notes.every((n) => n.startsWith("year off by") || n.startsWith("title drift"));
+      const contradicted = c.verdict === "INCONSISTENT" && !yearOnly;
       return {
         ...base,
-        verdict: contradicted ? "INCONSISTENT" : "REGISTRY_UNREACHABLE",
+        verdict: contradicted ? "INCONSISTENT" : yearOnly ? "BENIGN_DRIFT" : "REGISTRY_UNREACHABLE",
         notes: [
           ...c.notes,
           contradicted
             ? "registry unreachable; this mismatch is against your local library metadata"
-            : "registry unreachable; matches your local library, which is not certification (no registry record, no retraction check)",
+            : yearOnly
+              ? "matched in your local library by title, not DOI — a year gap here is usually a different edition or printing; confirm by hand"
+              : "registry unreachable; matches your local library, which is not certification (no registry record, no retraction check)",
         ],
         truth_source: "local",
         truth_title: local.title,

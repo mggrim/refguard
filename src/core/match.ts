@@ -50,14 +50,24 @@ export function journalMatch(a: string, b: string): boolean {
  */
 const NAME_PARTICLES = /^(?:van|von|de|del|della|der|den|di|da|dos|du|la|le|el|al|bin|ben|st|mac|mc)\s+/;
 
-/** Surname key for comparison: accents folded, particles stripped. */
+/**
+ * Surname key for comparison: accents folded, particles stripped, and reduced to
+ * the final token so a compound surname matches its short form. Registries and
+ * bibliographies disagree constantly about both ends of a name — "van Lente"
+ * against "Lente", "Long Lingo" against "Lingo" — and each disagreement was
+ * reported as an author mismatch on a perfectly good reference.
+ */
 export function surnameKey(name: string): string {
-  let n = normalize(name);
+  // Drop apostrophes before normalising: the straight one is deleted by normalize
+  // and the curly one becomes a space, so O'Mahony and O’Mahony keyed differently.
+  let n = normalize(name.replace(/['\u2018\u2019\u02bc]/g, ""));
   for (;;) {
     const stripped = n.replace(NAME_PARTICLES, "");
-    if (stripped === n) return n;
+    if (stripped === n) break;
     n = stripped;
   }
+  const parts = n.split(" ").filter(Boolean);
+  return parts[parts.length - 1] ?? n;
 }
 
 export function authorOverlap(claimed: string[], truth: string[]): number {

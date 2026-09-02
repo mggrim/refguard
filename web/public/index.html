@@ -3,131 +3,735 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RefGuard</title>
+<title>RefGuard — the registry check for bibliographies</title>
+<meta name="description" content="Paste a bibliography. Every entry is checked against the scholarly record: does the paper exist, do its fields belong to it, has it been retracted? No AI in the audit.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<!--
+  HERO: a scroll-scrubbed flight. One citation lifts off a manuscript page, splits into
+  its five fields, flies into the registry, is compared line by line, and gets stamped.
+  Scroll drives time; scrolling up rewinds. Adapted from the scroll-world technique
+  (oso95/scroll-world) — same scrub-engine ideas (pinned stage, per-scene linger easing,
+  route rail, reduced-motion fallback) — but rendered procedurally on a canvas, so there
+  is no video pipeline and nothing to download.
+-->
 <style>
   :root{
-    --bg:#faf9f6; --fg:#1a1a1a; --muted:#6b6b6b; --card:#ffffff; --line:#e4e1da;
-    --block:#b3261e; --block-bg:#fdece9; --review:#8a6d00; --review-bg:#fdf6df;
-    --pass:#1e6b3a; --pass-bg:#e9f5ec; --accent:#284b63;
+    --paper:#f5f0e6; --paper-2:#ece5d6; --paper-3:#e2d9c6; --ink:#1b1915; --ink-2:#4a453c; --ink-3:#8a8375;
+    --rule:#cfc5b0; --ox:#8a2431; --ox-soft:#f1dfe0; --pass:#2e6b41; --pass-soft:#dfeadf;
+    --review:#98670f; --review-soft:#f3e7cc; --card:#fbf8f1;
+    --shadow: 0 1px 0 rgba(27,25,21,.06), 0 14px 40px -18px rgba(27,25,21,.35);
+    --display:"Instrument Serif", "Iowan Old Style", Georgia, serif;
+    --body:"IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    --mono:"IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+    color-scheme: light;
   }
-  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-    --bg:#16181c; --fg:#e8e6e1; --muted:#9a9a94; --card:#1e2126; --line:#31353c;
-    --block:#ff8a80; --block-bg:#3a2422; --review:#ffd54f; --review-bg:#39321c;
-    --pass:#81c995; --pass-bg:#1f3327; --accent:#8ab4d4;
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    --paper:#15130f; --paper-2:#1d1a15; --paper-3:#282319; --ink:#efe8da; --ink-2:#c3bbab; --ink-3:#8b8577;
+    --rule:#3a342a; --ox:#d9636f; --ox-soft:#3a1f22; --pass:#7cc48f; --pass-soft:#1d3324;
+    --review:#e0b25a; --review-soft:#3a2f14; --card:#1a1713;
+    --shadow: 0 1px 0 rgba(0,0,0,.4), 0 14px 40px -18px rgba(0,0,0,.8);
+    color-scheme: dark;
   }}
   :root[data-theme="dark"]{
-    --bg:#16181c; --fg:#e8e6e1; --muted:#9a9a94; --card:#1e2126; --line:#31353c;
-    --block:#ff8a80; --block-bg:#3a2422; --review:#ffd54f; --review-bg:#39321c;
-    --pass:#81c995; --pass-bg:#1f3327; --accent:#8ab4d4;
+    --paper:#15130f; --paper-2:#1d1a15; --paper-3:#282319; --ink:#efe8da; --ink-2:#c3bbab; --ink-3:#8b8577;
+    --rule:#3a342a; --ox:#d9636f; --ox-soft:#3a1f22; --pass:#7cc48f; --pass-soft:#1d3324;
+    --review:#e0b25a; --review-soft:#3a2f14; --card:#1a1713;
+    --shadow: 0 1px 0 rgba(0,0,0,.4), 0 14px 40px -18px rgba(0,0,0,.8);
+    color-scheme: dark;
   }
-  body{background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;
-       margin:0;padding:2rem 1rem 4rem;}
-  main{max-width:820px;margin:0 auto;}
-  h1{font-size:1.7rem;margin:0 0 .2rem;}
-  h1 span{color:var(--accent);}
-  .sub{color:var(--muted);margin:0 0 1.5rem;}
-  textarea{width:100%;box-sizing:border-box;min-height:220px;padding:.9rem;border:1px solid var(--line);
-           border-radius:8px;background:var(--card);color:var(--fg);font:13px/1.5 ui-monospace,monospace;resize:vertical;}
-  button{margin-top:.8rem;padding:.6rem 1.4rem;font-size:1rem;border:none;border-radius:8px;
-         background:var(--accent);color:#fff;cursor:pointer;}
-  button:disabled{opacity:.5;cursor:default;}
-  #progress{color:var(--muted);margin:.8rem 0;}
-  .tier{margin-top:1.4rem;}
-  .tier h2{font-size:1.05rem;margin:0 0 .5rem;}
-  .item{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line);
-        border-radius:6px;padding:.6rem .8rem;margin-bottom:.5rem;overflow-x:auto;}
-  .item .k{font-weight:600;}
-  .item .v{font:12px ui-monospace,monospace;padding:.1rem .45rem;border-radius:4px;margin-right:.5rem;}
-  .item .n{color:var(--muted);font-size:.9rem;margin-top:.2rem;}
-  .b .v{background:var(--block-bg);color:var(--block);} .b{border-left-color:var(--block);}
-  .r .v{background:var(--review-bg);color:var(--review);} .r{border-left-color:var(--review);}
-  .p .v{background:var(--pass-bg);color:var(--pass);} .p{border-left-color:var(--pass);}
-  .note{font-size:.85rem;color:var(--muted);margin-top:2.2rem;border-top:1px solid var(--line);padding-top:.9rem;}
-  .note a{color:var(--accent);}
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} }
+  body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.55 var(--body);
+       -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+  body::before{ /* paper grain */
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;mix-blend-mode:multiply;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .08 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  :root[data-theme="dark"] body::before{mix-blend-mode:screen;opacity:.18}
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) body::before{mix-blend-mode:screen;opacity:.18} }
+  a{color:var(--ox);text-decoration-thickness:1px;text-underline-offset:3px}
+  a:hover{color:var(--ink)}
+  ::selection{background:var(--ox);color:#fff}
+
+  /* ---------- masthead ---------- */
+  .mast{position:fixed;top:0;left:0;right:0;z-index:30;display:flex;align-items:center;justify-content:space-between;
+        padding:.9rem clamp(1rem,3vw,2.5rem) 1.4rem;pointer-events:none;
+        background:linear-gradient(to bottom,var(--paper) 0%,color-mix(in srgb,var(--paper) 80%,transparent) 65%,transparent 100%)}
+  .mast > *{pointer-events:auto}
+  .wordmark{font:italic 1.5rem/1 var(--display);letter-spacing:-.01em;color:var(--ink);text-decoration:none;display:flex;align-items:baseline;gap:.5rem}
+  .wordmark b{font-style:normal;font-weight:400}
+  .wordmark small{font:500 .62rem/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+  .mast nav{display:flex;gap:1.4rem;font:500 .72rem/1 var(--mono);letter-spacing:.12em;text-transform:uppercase}
+  .mast nav a{color:var(--ink-2);text-decoration:none;border-bottom:1px solid transparent;padding-bottom:2px}
+  .mast nav a:hover{border-color:var(--ox);color:var(--ink)}
+  .mast nav a{white-space:nowrap}
+  @media (max-width:640px){ .mast nav a:not(.skip){display:none} .wordmark small{display:none} .mast{padding-bottom:1rem} }
+
+  /* ---------- flight (hero) ---------- */
+  .flight{position:relative;height:calc(var(--legs) * 100vh + 100vh);z-index:1}
+  .stage{position:sticky;top:0;height:100vh;overflow:hidden}
+  .stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .copylayer{position:absolute;inset:0;pointer-events:none}
+  .copy{position:absolute;left:clamp(1rem,5vw,4.5rem);bottom:clamp(4.5rem,12vh,8rem);max-width:min(31rem,84vw);
+        padding:1.3rem 1.6rem 1.4rem;border-left:2px solid var(--ox);
+        background:color-mix(in srgb,var(--paper) 86%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+        opacity:0;transform:translateY(14px);transition:opacity .35s ease-out,transform .55s cubic-bezier(.16,1,.3,1);pointer-events:none}
+  .copy.on{opacity:1;transform:none;pointer-events:auto}
+  .copy .num{font:500 .68rem/1 var(--mono);letter-spacing:.18em;color:var(--ox);display:block;margin-bottom:.9rem}
+  .copy h2{font:400 clamp(2rem,5.2vw,3.6rem)/1.02 var(--display);letter-spacing:-.015em;margin:0 0 .8rem;text-wrap:balance}
+  .copy h2 em{font-style:italic;color:var(--ox)}
+  .copy p{margin:0;color:var(--ink-2);font-size:1rem;max-width:26rem;text-wrap:pretty}
+  .copy .cta{margin-top:1.3rem;display:flex;gap:1rem;align-items:center;flex-wrap:wrap}
+  .hint{position:absolute;left:50%;bottom:1.4rem;transform:translateX(-50%);font:500 .66rem/1 var(--mono);letter-spacing:.16em;
+        text-transform:uppercase;color:var(--ink-3);display:flex;align-items:center;gap:.6rem;transition:opacity .4s}
+  .hint i{display:block;width:1px;height:28px;background:var(--ink-3);position:relative;overflow:hidden}
+  .hint i::after{content:"";position:absolute;left:0;top:-28px;width:1px;height:28px;background:var(--ox);animation:drip 1.8s ease-in-out infinite}
+  @keyframes drip{to{top:28px}}
+  .flight.past .hint{opacity:0}
+  .route{position:absolute;right:clamp(1rem,3vw,2.5rem);top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:1.1rem}
+  .route button{all:unset;cursor:pointer;display:flex;align-items:center;gap:.7rem;justify-content:flex-end;color:var(--ink-3);font:500 .62rem/1 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+  .route button span{opacity:0;transform:translateX(6px);transition:.25s}
+  .route button:hover span,.route button.on span{opacity:1;transform:none}
+  .route button i{width:7px;height:7px;border-radius:50%;border:1px solid var(--ink-3);display:block;transition:.25s}
+  .route button.on i{background:var(--ox);border-color:var(--ox);transform:scale(1.35)}
+  .route button:focus-visible i{outline:2px solid var(--ox);outline-offset:3px}
+  @media (max-width:640px){ .route{display:none} }
+
+  /* ---------- buttons ---------- */
+  .btn{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:.6rem;padding:.8rem 1.3rem;border:1px solid var(--ink);
+       background:var(--ink);color:var(--paper);font:500 .74rem/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;
+       transition:transform .18s cubic-bezier(.16,1,.3,1),background .18s,color .18s;box-shadow:3px 3px 0 var(--ox)}
+  .btn:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--ox)}
+  .btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--ox)}
+  .btn:disabled{opacity:.55;cursor:default;transform:none;box-shadow:3px 3px 0 var(--ink-3)}
+  .btn:focus-visible{outline:2px solid var(--ox);outline-offset:3px}
+  .btn.ghost{background:transparent;color:var(--ink);box-shadow:none;border-color:var(--rule)}
+  .btn.ghost:hover{border-color:var(--ink);box-shadow:none}
+  .btn.ghost:active{transform:translate(1px,1px)}
+  .link{all:unset;cursor:pointer;color:var(--ox);font:500 .74rem/1 var(--mono);letter-spacing:.08em;border-bottom:1px solid currentColor;padding-bottom:2px}
+  .link:hover{color:var(--ink)}
+  .link:focus-visible{outline:2px solid var(--ox);outline-offset:3px}
+
+  /* ---------- workspace ---------- */
+  .desk{position:relative;z-index:2;background:var(--paper);border-top:1px solid var(--rule)}
+  .desk .inner{max-width:1240px;margin:0 auto;padding:clamp(5rem,10vh,7rem) clamp(1rem,3vw,2.5rem) 5rem}
+  .desk,.gloss{scroll-margin-top:0}
+  .desk-head{display:grid;grid-template-columns:1fr auto;gap:2rem;align-items:end;margin-bottom:2.2rem}
+  .desk-head h2{font:400 clamp(2rem,4vw,3rem)/1.05 var(--display);letter-spacing:-.015em;margin:0}
+  .desk-head h2 em{color:var(--ox)}
+  .desk-head p{margin:.6rem 0 0;color:var(--ink-2);max-width:38rem;text-wrap:pretty}
+  .desk-head .meta{font:400 .7rem/1.7 var(--mono);color:var(--ink-3);text-align:right;letter-spacing:.06em}
+  @media (max-width:800px){ .desk-head{grid-template-columns:1fr} .desk-head .meta{text-align:left} }
+
+  .bench{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:clamp(1.2rem,3vw,3rem);align-items:start}
+  @media (max-width:900px){ .bench{grid-template-columns:1fr} }
+
+  .sheet{position:relative;background:var(--card);border:1px solid var(--rule);box-shadow:var(--shadow)}
+  .sheet::before{content:"";position:absolute;left:2.6rem;top:0;bottom:0;width:1px;background:var(--ox);opacity:.55;pointer-events:none}
+  .sheet-label{display:flex;flex-wrap:wrap;gap:.4rem 1rem;justify-content:space-between;align-items:center;padding:.7rem 1rem .7rem 3.2rem;border-bottom:1px solid var(--rule);
+               font:500 .64rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+  .sheet textarea{display:block;width:100%;min-height:26rem;padding:1rem 1rem 1rem 3.2rem;border:0;background:transparent;color:var(--ink);resize:vertical;
+                  font:13.5px/1.7 var(--mono);outline:none;
+                  background-image:repeating-linear-gradient(transparent 0 calc(1.7em - 1px),var(--rule) calc(1.7em - 1px) 1.7em);
+                  background-attachment:local;background-position:0 1rem}
+  .sheet textarea::placeholder{color:var(--ink-3)}
+  .sheet textarea:focus-visible{box-shadow:inset 0 0 0 2px var(--ox)}
+  .sheet-foot{display:flex;flex-wrap:wrap;gap:1rem;align-items:center;justify-content:space-between;padding:1rem 1rem 1rem 3.2rem;border-top:1px solid var(--rule)}
+  .sheet-foot .count{font:400 .7rem/1 var(--mono);color:var(--ink-3)}
+
+  /* ledger */
+  .ledger{position:relative;min-height:26rem}
+  .ledger-head{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;border-bottom:2px solid var(--ink);padding-bottom:.6rem;margin-bottom:.2rem}
+  .ledger-head h3{margin:0;font:400 1.5rem/1 var(--display)}
+  .ledger-head .tally{display:flex;gap:1.1rem;font:500 .66rem/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  .tally b{font-weight:500;color:var(--ink)}
+  .tally .b b{color:var(--ox)} .tally .r b{color:var(--review)} .tally .p b{color:var(--pass)}
+  .progress{height:2px;background:var(--rule);position:relative;overflow:hidden;margin-bottom:1.2rem}
+  .progress i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--ox);transition:width .25s ease-out}
+  .status{font:400 .74rem/1.5 var(--mono);color:var(--ink-2);min-height:1.2rem;margin-bottom:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .status.err{color:var(--ox)}
+  .empty{padding:3rem 0;color:var(--ink-3);font:italic 1.2rem/1.5 var(--display);max-width:26rem;text-wrap:pretty}
+  .group{margin-bottom:1.6rem}
+  .group[hidden]{display:none}
+  .group h4{margin:0 0 .5rem;display:flex;align-items:center;gap:.7rem;font:500 .66rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+  .group h4::after{content:"";flex:1;height:1px;background:var(--rule)}
+  .group.b h4{color:var(--ox)} .group.r h4{color:var(--review)} .group.p h4{color:var(--pass)}
+  .row{display:grid;grid-template-columns:9.4rem minmax(0,1fr);gap:.9rem;padding:.75rem 0;border-bottom:1px solid var(--rule);animation:rowin .5s cubic-bezier(.16,1,.3,1) both}
+  @keyframes rowin{from{opacity:0;transform:translateY(6px)}}
+  .row .key{font:500 .78rem/1.4 var(--mono);color:var(--ink)}
+  .row .title{font:400 .92rem/1.4 var(--body);color:var(--ink);margin-top:.15rem;text-wrap:pretty}
+  .row .title i{color:var(--ink-3);font-style:normal;margin-left:.4rem;font-family:var(--mono);font-size:.72rem}
+  .row .n{font:400 .78rem/1.5 var(--body);color:var(--ink-2);margin-top:.35rem}
+  .row .n .lbl{font:500 .62rem/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-right:.5rem}
+  @media (max-width:560px){ .row{grid-template-columns:1fr;gap:.4rem} }
+
+  /* the stamp */
+  .stamp{display:inline-block;padding:.32rem .5rem .28rem;border:2px solid currentColor;border-radius:3px;
+         font:500 .6rem/1.3 var(--mono);letter-spacing:.12em;text-transform:uppercase;max-width:8.4rem;text-align:center;
+         transform:rotate(-3deg);transform-origin:center;position:relative;
+         -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='40'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.5' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 -1.4 1.9'/%3E%3C/filter%3E%3Crect width='120' height='40' fill='white' filter='url(%23g)'/%3E%3C/svg%3E");
+         mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='40'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.5' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 -1.4 1.9'/%3E%3C/filter%3E%3Crect width='120' height='40' fill='white' filter='url(%23g)'/%3E%3C/svg%3E");
+         -webkit-mask-size:120px 40px;mask-size:120px 40px}
+  .stamp.b{color:var(--ox)} .stamp.r{color:var(--review)} .stamp.p{color:var(--pass)}
+  .row .stamp{animation:thunk .45s cubic-bezier(.2,1.4,.4,1) both}
+  @keyframes thunk{0%{transform:rotate(-8deg) scale(1.9);opacity:0}60%{opacity:1}100%{transform:rotate(-3deg) scale(1)}}
+
+  /* certification */
+  .cert{display:none;margin-top:1.4rem;padding:1.4rem 1.4rem 1.4rem 1.6rem;border:1px solid var(--rule);background:var(--card);
+        grid-template-columns:auto 1fr;gap:1.4rem;align-items:center;box-shadow:var(--shadow)}
+  .cert.on{display:grid}
+  .cert .big{font:500 .82rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;padding:.8rem 1rem .7rem;border:3px solid currentColor;
+             border-radius:4px;transform:rotate(-6deg);animation:thunk .6s cubic-bezier(.2,1.4,.4,1) both;
+             -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='80'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.45' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 -1.2 1.8'/%3E%3C/filter%3E%3Crect width='200' height='80' fill='white' filter='url(%23g)'/%3E%3C/svg%3E");
+             mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='80'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.45' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 -1.2 1.8'/%3E%3C/filter%3E%3Crect width='200' height='80' fill='white' filter='url(%23g)'/%3E%3C/svg%3E");
+             -webkit-mask-size:200px 80px;mask-size:200px 80px}
+  .cert.b .big{color:var(--ox)} .cert.r .big{color:var(--review)} .cert.p .big{color:var(--pass)}
+  .cert p{margin:0;font:400 .95rem/1.5 var(--body);color:var(--ink-2)}
+  .cert p b{color:var(--ink);font-weight:500}
+  .cert .tools{margin-top:.6rem;display:flex;gap:1.2rem}
+  @media (max-width:560px){ .cert{grid-template-columns:1fr} }
+
+  /* ---------- glossary / colophon ---------- */
+  .gloss{position:relative;z-index:2;border-top:1px solid var(--rule);background:var(--paper-2)}
+  .gloss .inner{max-width:1240px;margin:0 auto;padding:3.5rem clamp(1rem,3vw,2.5rem) 4rem;display:grid;grid-template-columns:minmax(0,4fr) minmax(0,8fr);gap:3rem}
+  @media (max-width:900px){ .gloss .inner{grid-template-columns:1fr} }
+  .gloss h2{font:400 2rem/1.1 var(--display);margin:0 0 .8rem;letter-spacing:-.01em}
+  .gloss .lede{color:var(--ink-2);margin:0;text-wrap:pretty}
+  .gloss dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:.55rem 1.2rem;align-items:baseline}
+  .gloss dt{justify-self:start}
+  .gloss dd{margin:0;font-size:.92rem;color:var(--ink-2)}
+  .gloss dd b{color:var(--ink);font-weight:500}
+  .colophon{position:relative;z-index:2;border-top:1px solid var(--rule);font:400 .78rem/1.7 var(--body);color:var(--ink-3)}
+  .colophon .inner{max-width:1240px;margin:0 auto;padding:1.6rem clamp(1rem,3vw,2.5rem);display:flex;flex-wrap:wrap;justify-content:space-between;gap:1rem}
+  .colophon p{margin:0;max-width:52rem;text-wrap:pretty}
+
+  /* reduced motion: static flight */
+  @media (prefers-reduced-motion: reduce){
+    .flight{height:auto}
+    .stage{position:relative;height:min(80vh,640px)}
+    .copylayer{position:relative;display:grid;gap:1.5rem;padding:2rem clamp(1rem,5vw,4.5rem) 3rem;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr))}
+    .copy{position:static;opacity:1;transform:none;pointer-events:auto;max-width:none}
+    .copy h2{font-size:1.7rem}
+    .hint,.route{display:none}
+    .row,.row .stamp,.cert .big{animation:none}
+  }
 </style>
 </head>
 <body>
-<main>
-  <h1>Ref<span>Guard</span></h1>
-  <p class="sub">Paste a bibliography (BibTeX or a plain reference list). Every entry is checked against
-  the OpenAlex registry: does the paper exist, do the title, authors, year, venue, and DOI belong to it,
-  and has it been retracted? No AI involved — pure registry lookup and comparison.</p>
 
-  <textarea id="input" placeholder="@article{key, title = {...}, ...}   —or—   Author, A. (2020). Title. Journal, 1(2), 3–4."></textarea>
-  <button id="go">Check references</button>
-  <div id="progress" hidden></div>
-  <div id="results"></div>
+<header class="mast">
+  <a class="wordmark" href="#top"><b>Ref</b>Guard <small>Registry check</small></a>
+  <nav>
+    <a href="#flight-registry">How it works</a>
+    <a href="#glossary">Verdicts</a>
+    <a class="skip" href="#desk">Check a bibliography ↓</a>
+  </nav>
+</header>
 
-  <p class="note">
-    Verdicts: <b>FABRICATED_CANDIDATE</b> = the DOI is registered nowhere (checked at OpenAlex and doi.org).
-    <b>INCONSISTENT</b> = the entry's fields don't match the real paper (wrong authors, year, venue, or mixed-up fields).
-    <b>RETRACTED</b> = the registry marks the paper retracted. <b>BENIGN_DRIFT</b> = formatting or online-first/print
-    differences. <b>UNVERIFIED</b> = not found anywhere; check by hand. <b>REGISTRY_UNREACHABLE</b> = network problem,
-    not evidence of fabrication — the check fails closed.
-    RefGuard verifies that entries describe real papers accurately; it cannot judge whether they are the
-    <i>right</i> papers to cite. Adapted from verification work by Katie Apker, Pedro Sant'Anna,
-    Scott Cunningham, and Dhuliawala et&nbsp;al. (2023, Chain-of-Verification).
-  </p>
-</main>
+<!-- ============ THE FLIGHT ============ -->
+<section class="flight" id="top" aria-label="How RefGuard checks a reference" style="--legs:4.6">
+  <div class="stage">
+    <canvas id="world" aria-hidden="true"></canvas>
+    <div class="copylayer">
+      <article class="copy" data-scene="0" id="flight-manuscript">
+        <span class="num">01 / 04 — THE MANUSCRIPT</span>
+        <h2>Every reference starts as <em>a line of text.</em></h2>
+        <p>Typed, pasted, inherited from a co-author, or invented by a model. On the page they all look the same.</p>
+      </article>
+      <article class="copy" data-scene="1" id="flight-parse">
+        <span class="num">02 / 04 — THE PARSE</span>
+        <h2>Split into the five fields that <em>can be checked.</em></h2>
+        <p>Title, authors, year, venue, DOI. No model reads the manuscript. A parser does, deterministically.</p>
+      </article>
+      <article class="copy" data-scene="2" id="flight-registry">
+        <span class="num">03 / 04 — THE REGISTRY</span>
+        <h2>Compared field by field against <em>the scholarly record.</em></h2>
+        <p>OpenAlex and the DOI handle registry. Does the paper exist, do these fields belong to it, and has it been retracted?</p>
+      </article>
+      <article class="copy" data-scene="3" id="flight-verdict">
+        <span class="num">04 / 04 — THE VERDICT</span>
+        <h2>Stamped. <em>Never guessed.</em></h2>
+        <p>A network failure is “cannot certify”, never a pass. A fabrication verdict needs a 404 at two registries. Anything unclear goes to review.</p>
+        <div class="cta"><a class="btn" href="#desk">Check your bibliography</a><a class="link" href="#glossary">Read the seven verdicts</a></div>
+      </article>
+    </div>
+    <div class="route" aria-label="Scenes">
+      <button data-jump="0"><span>Manuscript</span><i></i></button>
+      <button data-jump="1"><span>Parse</span><i></i></button>
+      <button data-jump="2"><span>Registry</span><i></i></button>
+      <button data-jump="3"><span>Verdict</span><i></i></button>
+    </div>
+    <div class="hint"><span>Scroll to follow one reference</span><i></i></div>
+  </div>
+</section>
+
+<!-- ============ THE DESK ============ -->
+<section class="desk" id="desk">
+  <div class="inner">
+    <div class="desk-head">
+      <div>
+        <h2>The desk. Paste, and the ledger <em>fills itself.</em></h2>
+        <p>BibTeX or a plain reference list. Each entry is sent to the registry on its own, so results arrive one at a time and nothing is skipped or summarised.</p>
+      </div>
+      <div class="meta">No account · nothing stored<br>Up to 300 entries per run<br>Zero AI in the audit</div>
+    </div>
+
+    <div class="bench">
+      <div class="sheet">
+        <div class="sheet-label"><span>Bibliography</span><button class="link" id="sample" type="button">Load the planted-errors sample</button></div>
+        <label for="input" hidden>Bibliography</label>
+        <textarea id="input" spellcheck="false" placeholder="@article{key, title = {…}, author = {…}, year = {…}, journal = {…}, doi = {…}}
+
+— or —
+
+Author, A., &amp; Author, B. (2020). Title of the paper. Journal Name, 1(2), 3–4. https://doi.org/10.xxxx/…"></textarea>
+        <div class="sheet-foot">
+          <button class="btn" id="go" type="button">Check references</button>
+          <span class="count" id="count">0 lines</span>
+        </div>
+      </div>
+
+      <div class="ledger" aria-live="polite">
+        <div class="ledger-head">
+          <h3>Ledger</h3>
+          <div class="tally" id="tally"><span class="b"><b>0</b> blocking</span><span class="r"><b>0</b> review</span><span class="p"><b>0</b> consistent</span></div>
+        </div>
+        <div class="progress"><i id="bar"></i></div>
+        <div class="status" id="status"></div>
+        <p class="empty" id="empty">Nothing entered yet. Each verdict is written here the moment the registry answers.</p>
+        <div class="group b" id="g-b" hidden><h4>Blocking</h4><div class="rows"></div></div>
+        <div class="group r" id="g-r" hidden><h4>Review by hand</h4><div class="rows"></div></div>
+        <div class="group p" id="g-p" hidden><h4>Consistent</h4><div class="rows"></div></div>
+        <div class="cert" id="cert">
+          <div class="big" id="cert-stamp"></div>
+          <div>
+            <p id="cert-text"></p>
+            <div class="tools"><button class="link" id="copy" type="button">Copy report</button><button class="link" id="reset" type="button">Clear the desk</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ GLOSSARY ============ -->
+<section class="gloss" id="glossary">
+  <div class="inner">
+    <div>
+      <h2>Seven verdicts, three tiers.</h2>
+      <p class="lede">Fail-closed means the tool would rather send you to check a reference by hand than let a bad one through. Nothing unrecognised is ever routed to “pass”.</p>
+    </div>
+    <dl>
+      <dt><span class="stamp b">Fabricated candidate</span></dt><dd><b>Blocking.</b> The DOI is registered nowhere, checked at both OpenAlex and doi.org.</dd>
+      <dt><span class="stamp b">Inconsistent</span></dt><dd><b>Blocking.</b> The paper exists, but the title, authors, year, venue or DOI do not belong to it. Field-mixing lives here.</dd>
+      <dt><span class="stamp b">Retracted</span></dt><dd><b>Blocking.</b> The registry marks the work as retracted.</dd>
+      <dt><span class="stamp r">Benign drift</span></dt><dd><b>Review.</b> Formatting or online-first versus print differences only.</dd>
+      <dt><span class="stamp r">Unverified</span></dt><dd><b>Review.</b> Found nowhere. Not evidence of fabrication; check by hand.</dd>
+      <dt><span class="stamp r">Registry unreachable</span></dt><dd><b>Review.</b> A network problem. The audit cannot certify, so it says so.</dd>
+      <dt><span class="stamp p">Consistent</span></dt><dd><b>Pass.</b> Every field matches the registry record.</dd>
+    </dl>
+  </div>
+</section>
+
+<footer class="colophon">
+  <div class="inner">
+    <p>RefGuard verifies that references describe real papers accurately. It cannot judge whether they are the <i>right</i> papers to cite. Adapted from verification work by Katie Apker, Pedro Sant’Anna, Scott Cunningham, and Dhuliawala et al. (2023, Chain-of-Verification). Registry data from OpenAlex and doi.org.</p>
+    <p>MIT licensed · <a href="#top">Back to the top</a></p>
+  </div>
+</footer>
+
 <script>
-const $ = (id) => document.getElementById(id);
-const TIERS = {
-  FABRICATED_CANDIDATE:"b", INCONSISTENT:"b", RETRACTED:"b",
-  BENIGN_DRIFT:"r", UNVERIFIED:"r", REGISTRY_UNREACHABLE:"r",
-  CONSISTENT:"p",
-};
-$("go").addEventListener("click", async () => {
-  const input = $("input").value.trim();
-  if (!input) return;
-  $("go").disabled = true;
-  $("results").innerHTML = "";
-  $("progress").hidden = false;
-  $("progress").textContent = "Parsing…";
-  try {
-    const pr = await fetch("/api/parse", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({input})});
-    const parsed = await pr.json();
-    if (!pr.ok) { $("progress").textContent = "⚠️ " + (parsed.error || pr.status); return; }
-    const entries = parsed.entries;
-    const results = [];
-    for (let i = 0; i < entries.length; i++) {
-      $("progress").textContent = `Checking ${i+1} / ${entries.length}: ${entries[i].key}…`;
-      const ar = await fetch("/api/audit-entry", {method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({entry:entries[i]})});
-      results.push(ar.ok ? await ar.json() : {key:entries[i].key,verdict:"REGISTRY_UNREACHABLE",notes:["server error "+ar.status]});
-    }
-    renderResults(results);
-    $("progress").hidden = true;
-  } catch (e) {
-    $("progress").textContent = "⚠️ " + e;
-  } finally {
-    $("go").disabled = false;
-  }
-});
-function renderResults(results){
-  // fail closed: anything with an unknown verdict renders in the review tier
-  const tier = (r) => TIERS[r.verdict] ?? "r";
-  const groups = {b:[], r:[], p:[]};
-  for (const r of results) groups[tier(r)].push(r);
-  const box = $("results");
-  const section = (cls, label, items) => {
-    if (!items.length) return;
-    const div = document.createElement("div");
-    div.className = "tier";
-    div.innerHTML = `<h2>${label} (${items.length})</h2>`;
-    for (const r of items) {
-      const it = document.createElement("div");
-      it.className = "item " + cls;
-      it.innerHTML = `<span class="v">${esc(r.verdict)}</span><span class="k">${esc(r.key)}</span>` +
-        (r.truth_title ? `<div class="n">registry match: ${esc(r.truth_title)}</div>` : "") +
-        (r.notes && r.notes.length ? `<div class="n">${esc(r.notes.join("; "))}</div>` : "");
-      div.appendChild(it);
-    }
-    box.appendChild(div);
+/* ============================================================================
+   THE FLIGHT — a scroll-scrubbed camera flight rendered on canvas.
+   Scroll position → t ∈ [0,1] → camera + scene state. Fully reversible.
+   Ideas borrowed from the scroll-world scrub engine: pinned stage, per-scene
+   linger easing (camera settles where the copy peaks), route rail, hint,
+   reduced-motion fallback. No video, no assets.
+   ========================================================================== */
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const flight = document.querySelector('.flight');
+  const canvas = document.getElementById('world');
+  const ctx = canvas.getContext('2d');
+  const copies = [...document.querySelectorAll('.copy')];
+  const dots = [...document.querySelectorAll('.route button')];
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  let C = {};
+  const readTheme = () => { C = { paper:css('--paper'), paper2:css('--paper-2'), paper3:css('--paper-3'), ink:css('--ink'), ink2:css('--ink-2'), ink3:css('--ink-3'), rule:css('--rule'), ox:css('--ox'), pass:css('--pass'), card:css('--card') }; };
+  readTheme();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readTheme(); draw(cur); });
+  new MutationObserver(() => { readTheme(); draw(cur); }).observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
+
+  // ---- scenes: [start, end] in t, with a linger (camera settles mid-scene) ----
+  const SCENES = [
+    { a:0.00, b:0.24, linger:.45 },   // manuscript
+    { a:0.24, b:0.50, linger:.40 },   // parse
+    { a:0.50, b:0.78, linger:.45 },   // registry
+    { a:0.78, b:1.00, linger:.55 },   // verdict
+  ];
+  const clamp = (x,a=0,b=1) => Math.min(b, Math.max(a,x));
+  const smooth = (x) => { x = clamp(x); return x*x*(3-2*x); };
+  const lerp = (a,b,x) => a + (b-a)*x;
+  const lingerEase = (x,L) => { const c = x-.5; return (1-L)*x + L*(4*c*c*c + .5); };
+  // local progress inside scene i (0..1), lingered
+  const local = (t,i) => { const s = SCENES[i]; return lingerEase(clamp((t-s.a)/(s.b-s.a)), s.linger); };
+
+  // ---- world geometry (units) ----
+  const PAGE = { x:0, y:0, w:620, h:820 };
+  const REF_Y = 585;                       // y of the highlighted reference block on the page
+  const REF = {
+    line1: 'Battilana, J., & Dorado, S. (2010). Building sustainable hybrid organizations:',
+    line2: 'The case of commercial microfinance organizations. Academy of Management',
+    line3: 'Journal, 53(6), 1419–1440. https://doi.org/10.5465/amj.2010.57318391',
   };
-  section("b", "🛑 Blocking", groups.b);
-  section("r", "⚠️ Review", groups.r);
-  section("p", "✅ Consistent", groups.p);
-}
-function esc(s){const d=document.createElement("span");d.textContent=String(s??"");return d.innerHTML;}
+  const FIELDS = [
+    { k:'TITLE',   v:'Building sustainable hybrid organizations: The case of commercial microfinance organizations' },
+    { k:'AUTHORS', v:'Battilana · Dorado' },
+    { k:'YEAR',    v:'2010' },
+    { k:'JOURNAL', v:'Academy of Management Journal' },
+    { k:'DOI',     v:'10.5465/amj.2010.57318391' },
+  ];
+  const CHIP_X = 690, CHIP_Y0 = 300, CHIP_GAP = 74;     // parsed field chips column
+  const REG = { x:1650, y:120, w:760, h:640 };            // registry archive area
+  const CARD = { x:1740, y:250, w:560, h:392 };           // the matched record card
+
+  // camera keyframes: {x,y (world centre), z (zoom)} per scene edge
+  function camera(t){
+    const narrow = W < 700;       // phones: the copy sits below the world, so centre it
+    const keys = [
+      { x:narrow?310:60, y:narrow?330:400, z:0.8 },   // t=0  whole page, right of the copy on desktop
+      { x:200, y:600, z:1.45 },   // end s0  pushed into the reference line
+      { x:760, y:500, z:1.0  },   // end s1  chips beside the page, page sliding out left
+      { x:1800,y:450, z:0.95 },   // end s2  inside the registry, chips peeking in from the left
+      { x:1810,y:440, z:1.2  },   // end s3  settled on the stamped card
+    ];
+    // which leg
+    let i = SCENES.findIndex(s => t <= s.b); if (i < 0) i = 3;
+    // the camera arrives 60% of the way through each leg and then holds, so the
+    // scene's own animation (chips landing, ticks, the stamp) plays on a settled frame
+    const s = SCENES[i];
+    const p = smooth(clamp((t - s.a) / (s.b - s.a) / .6));
+    const A = keys[i], B = keys[i+1];
+    // a little vertical arc on the long registry leg so the flight reads as flying, not sliding
+    const arc = (i===2) ? -Math.sin(p*Math.PI)*90 : 0;
+    return { x:lerp(A.x,B.x,p), y:lerp(A.y,B.y,p)+arc, z:lerp(A.z,B.z,p) };
+  }
+
+  // ---- drawing helpers ----
+  let W=0,H=0,dpr=1;
+  function resize(){
+    dpr = Math.min(devicePixelRatio||1, 2);
+    W = canvas.clientWidth; H = canvas.clientHeight;
+    canvas.width = W*dpr; canvas.height = H*dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    draw(cur);
+  }
+  function rr(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+  const mono = (s) => `${s}px "IBM Plex Mono", Menlo, monospace`;
+  const serif = (s,it) => `${it?'italic ':''}${s}px "Instrument Serif", Georgia, serif`;
+  const sans = (s,w) => `${w||400} ${s}px "IBM Plex Sans", Arial, sans-serif`;
+
+  // deterministic pseudo-random for text-line widths
+  const rnd = (i) => { const x = Math.sin(i*127.1+311.7)*43758.5453; return x - Math.floor(x); };
+
+  function drawPage(t){
+    const {x,y,w,h} = PAGE;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,.22)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 18;
+    ctx.fillStyle = C.card; ctx.fillRect(x,y,w,h);
+    ctx.restore();
+    ctx.strokeStyle = C.rule; ctx.lineWidth = 1; ctx.strokeRect(x+.5,y+.5,w-1,h-1);
+    // running head
+    ctx.fillStyle = C.ink3; ctx.font = mono(9); ctx.textBaseline='top';
+    ctx.fillText('ACADEMY OF MANAGEMENT JOURNAL · MANUSCRIPT AMJ-2026-0341', x+56, y+40);
+    ctx.fillText('34', x+w-72, y+40);
+    // title
+    ctx.fillStyle = C.ink; ctx.font = serif(22);
+    ctx.fillText('References', x+56, y+92);
+    ctx.fillStyle = C.rule; ctx.fillRect(x+56, y+124, w-112, 1);
+    // faux body lines (grey bars), grouped in reference-shaped blocks
+    ctx.fillStyle = C.paper3;
+    let yy = y+146, i=0;
+    while (yy < REF_Y-30){
+      const inBlock = i%4; const wl = inBlock===0 ? 0.92 : (inBlock===3 ? 0.35+rnd(i)*.4 : 0.8+rnd(i)*.15);
+      const indent = inBlock===0 ? 0 : 26;
+      ctx.fillRect(x+56+indent, yy, (w-112-indent)*wl, 7);
+      yy += (inBlock===3) ? 26 : 15; i++;
+    }
+    // the reference of interest: real text, highlighted as t progresses through scene 0
+    const hl = smooth(local(t,0)*1.6);
+    ctx.fillStyle = C.ox; ctx.globalAlpha = .12*hl; ctx.fillRect(x+48, REF_Y-8, w-96, 62); ctx.globalAlpha = 1;
+    ctx.fillStyle = C.ox; ctx.fillRect(x+48, REF_Y-8, 3*hl, 62);
+    ctx.fillStyle = C.ink; ctx.font = sans(11.5);
+    ctx.fillText(REF.line1, x+56, REF_Y);
+    ctx.fillText(REF.line2, x+82, REF_Y+18);
+    ctx.fillText(REF.line3, x+82, REF_Y+36);
+    // remaining faux lines
+    ctx.fillStyle = C.paper3; yy = REF_Y+70; i=40;
+    while (yy < y+h-60){ const inBlock=i%4; const wl = inBlock===0?0.92:(inBlock===3?0.35+rnd(i)*.4:0.8+rnd(i)*.15); const indent=inBlock===0?0:26; ctx.fillRect(x+56+indent,yy,(w-112-indent)*wl,7); yy += inBlock===3?26:15; i++; }
+  }
+
+  function chipRect(i){ return { x:CHIP_X, y:CHIP_Y0 + i*CHIP_GAP, w:470, h:56 }; }
+
+  function drawChips(t){
+    // chips fly out of the reference line during scene 1, staggered; stay put afterwards
+    const p1 = local(t,1);
+    if (t < SCENES[1].a - .02) return;
+    FIELDS.forEach((f,i) => {
+      const s = smooth((p1 - i*.09) / .55);
+      if (s <= 0) return;
+      const dst = chipRect(i);
+      const sx = PAGE.x+90 + i*40, sy = REF_Y + 16 + (i%3)*18;    // origin on the reference line
+      const x = lerp(sx, dst.x, s), y = lerp(sy, dst.y, s) - Math.sin(s*Math.PI)*60;
+      const w = lerp(120, dst.w, s), h = lerp(14, dst.h, s);
+      ctx.save(); ctx.globalAlpha = Math.min(1, s*1.6);
+      ctx.shadowColor='rgba(0,0,0,.16)'; ctx.shadowBlur=18; ctx.shadowOffsetY=8;
+      ctx.fillStyle = C.card; rr(x,y,w,h,3); ctx.fill(); ctx.restore();
+      ctx.strokeStyle = C.rule; ctx.lineWidth=1; rr(x+.5,y+.5,w-1,h-1,3); ctx.stroke();
+      if (s > .7){
+        ctx.globalAlpha = (s-.7)/.3;
+        ctx.fillStyle = C.ox; ctx.font = mono(9); ctx.textBaseline='top';
+        ctx.fillText(f.k, x+14, y+10);
+        ctx.fillStyle = C.ink; ctx.font = sans(12.5);
+        ctx.fillText(ellipsis(f.v, 58), x+14, y+28);
+        ctx.globalAlpha = 1;
+      }
+    });
+  }
+
+  function ellipsis(s,n){ return s.length>n ? s.slice(0,n-1)+'…' : s; }
+
+  function drawRegistry(t){
+    if (t < SCENES[1].b - .08) return;
+    const p2 = local(t,2), p3 = local(t,3);
+    const appear = smooth((t - (SCENES[1].b-.08)) / .16);
+    ctx.save(); ctx.globalAlpha = appear;
+    // the archive: rows of receding record cards, drawn with parallax depth
+    const cols = 9, rows = 7;
+    for (let r=0;r<rows;r++){
+      const depth = (r+1)/rows;                       // 1 = front (bottom row)
+      const scale = .45 + depth*.55;
+      const y = REG.y + r*82 + (1-depth)*30;
+      for (let c=0;c<cols;c++){
+        const jitter = rnd(r*13+c)*10;
+        const x = REG.x - 200 + c*118 + (r%2)*40 + jitter;
+        const w = 96*scale, h = 60*scale;
+        ctx.globalAlpha = appear * (0.18 + depth*.5);
+        ctx.fillStyle = C.paper3; ctx.fillRect(x,y,w,h);
+        ctx.fillStyle = C.rule; ctx.fillRect(x+8, y+10, w*.6, 3); ctx.fillRect(x+8, y+18, w*.45, 3);
+      }
+    }
+    ctx.restore();
+
+    // one record card comes forward and settles in front (during scene 2)
+    const come = smooth((p2 - .12)/.55);
+    if (come <= 0) return;
+    const {x,y,w,h} = CARD;
+    const cx = lerp(REG.x+260, x, come), cy = lerp(REG.y+300, y, come);
+    const sc = lerp(.35, 1, come);
+    ctx.save();
+    ctx.translate(cx,cy); ctx.scale(sc,sc);
+    ctx.shadowColor='rgba(0,0,0,.28)'; ctx.shadowBlur=50; ctx.shadowOffsetY=22;
+    ctx.fillStyle = C.card; ctx.fillRect(0,0,w,h);
+    ctx.restore();
+    ctx.save(); ctx.translate(cx,cy); ctx.scale(sc,sc);
+    ctx.strokeStyle = C.rule; ctx.lineWidth = 1; ctx.strokeRect(.5,.5,w-1,h-1);
+    ctx.fillStyle = C.ink3; ctx.font = mono(9); ctx.textBaseline='top';
+    ctx.fillText('OPENALEX · W2119270498 · REGISTRY RECORD', 22, 20);
+    ctx.fillStyle = C.rule; ctx.fillRect(22, 40, w-44, 1);
+    // field rows, each ticked as scene 2 progresses (after the card arrives)
+    const truth = ['Building sustainable hybrid organizations: The case of commercial microfinance organizations','Battilana · Dorado','2010','Academy of Management Journal','10.5465/amj.2010.57318391'];
+    FIELDS.forEach((f,i) => {
+      const ry = 58 + i*62;
+      ctx.fillStyle = C.ox; ctx.font = mono(9); ctx.fillText(f.k, 22, ry);
+      ctx.fillStyle = C.ink; ctx.font = sans(12.5); ctx.fillText(ellipsis(truth[i],58), 22, ry+18);
+      ctx.fillStyle = C.rule; ctx.fillRect(22, ry+46, w-44, 1);
+      const tick = smooth((p2 - .62 - i*.07)/.14);
+      if (tick > 0){
+        ctx.save(); ctx.globalAlpha = tick;
+        ctx.strokeStyle = C.pass; ctx.lineWidth = 2.2; ctx.lineCap='round';
+        ctx.beginPath(); ctx.moveTo(w-46, ry+22); ctx.lineTo(w-38, ry+30); ctx.lineTo(w-24, ry+12); ctx.stroke();
+        ctx.restore();
+      }
+    });
+    // the stamp (scene 3)
+    const st = smooth((p3 - .08)/.5);
+    if (st > 0){
+      const s = lerp(2.6, 1, st);
+      ctx.save();
+      ctx.translate(w-150, h-84); ctx.rotate(-.2); ctx.scale(s,s);
+      ctx.globalAlpha = st;
+      ctx.strokeStyle = C.pass; ctx.lineWidth = 3; rr(-96,-26,192,52,4); ctx.stroke();
+      ctx.fillStyle = C.pass; ctx.font = mono(15); ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('CONSISTENT', 0, 1);
+      ctx.font = mono(7); ctx.fillText('5 / 5 FIELDS · NOT RETRACTED', 0, 17);
+      ctx.restore();
+    }
+    ctx.restore();
+
+    // connection lines: chips → card fields, drawn while comparing
+    const link = smooth((p2 - .5)/.3) * (1 - smooth((p3-.3)/.4));
+    if (link > 0 && come > .95){
+      ctx.save(); ctx.globalAlpha = link*.7; ctx.strokeStyle = C.ox; ctx.lineWidth = 1; ctx.setLineDash([4,5]);
+      FIELDS.forEach((f,i) => { const a = chipRect(i); const ay = a.y+a.h/2, by = y+58+i*62+24;
+        ctx.beginPath(); ctx.moveTo(a.x+a.w, ay); ctx.bezierCurveTo(a.x+a.w+300, ay, x-300, by, x, by); ctx.stroke(); });
+      ctx.restore();
+    }
+  }
+
+  function draw(t){
+    if (!W) return;
+    ctx.clearRect(0,0,W,H);
+    // atmosphere: a faint vignette + horizon line so the flight has a ground
+    const g = ctx.createRadialGradient(W*.6, H*.4, 0, W*.6, H*.4, Math.max(W,H)*.9);
+    g.addColorStop(0, C.paper); g.addColorStop(1, C.paper2);
+    ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+    const cam = camera(t);
+    const z = cam.z * Math.min(1, Math.max(.5, W/1100));   // scale down on narrow viewports, but not below half
+    ctx.save();
+    ctx.translate(W/2, H/2); ctx.scale(z,z); ctx.translate(-cam.x, -cam.y);
+    drawRegistry(t);
+    drawPage(t);
+    drawChips(t);
+    ctx.restore();
+  }
+
+  // ---- scroll → t ----
+  let cur = 0, target = 0, raf = 0, activeScene = -1;
+  function read(){
+    const rect = flight.getBoundingClientRect();
+    const total = flight.offsetHeight - innerHeight;
+    target = clamp(-rect.top / total);
+    flight.classList.toggle('past', target > .04);
+    if (!raf) raf = requestAnimationFrame(tick);
+  }
+  function tick(){
+    raf = 0;
+    cur += (target - cur) * .18;
+    if (Math.abs(target-cur) < .0004) cur = target;
+    draw(cur); setScene(cur);
+    if (cur !== target) raf = requestAnimationFrame(tick);
+  }
+  function setScene(t){
+    let i = SCENES.findIndex(s => t < s.b); if (i<0) i=3;
+    // copy peaks mid-scene; show it from 12% into the scene
+    const s = SCENES[i]; const lp = (t - s.a)/(s.b - s.a);
+    const show = (lp > .1 || i===0) && (i===3 || lp < .96);
+    copies.forEach((c,k) => c.classList.toggle('on', k===i && show));
+    if (i !== activeScene){ activeScene = i; dots.forEach((d,k) => d.classList.toggle('on', k===i)); }
+  }
+  dots.forEach(d => d.addEventListener('click', () => {
+    const i = +d.dataset.jump; const s = SCENES[i];
+    const total = flight.offsetHeight - innerHeight;
+    scrollTo({ top: flight.offsetTop + total*(s.a + (s.b-s.a)*.5), behavior: reduce?'auto':'smooth' });
+  }));
+
+  // test hook: draw a given t immediately (used by the verification harness)
+  window.__flight = { jump(t){ const total = flight.offsetHeight - innerHeight; scrollTo({ top: flight.offsetTop + total*t, behavior:'instant' }); cur = target = clamp(t); flight.classList.toggle('past', cur > .04); draw(cur); setScene(cur); return cur; } };
+
+  if (reduce){
+    // static final frame; copy is laid out by CSS
+    copies.forEach(c => c.classList.add('on'));
+    addEventListener('resize', () => { resize(); draw(1); });
+    document.fonts?.ready.then(() => { resize(); draw(1); });
+    resize(); cur = 1; draw(1);
+  } else {
+    addEventListener('scroll', read, { passive:true });
+    addEventListener('resize', () => { resize(); read(); });
+    document.fonts?.ready.then(() => draw(cur));
+    resize(); read();
+  }
+})();
+
+/* ============================================================================
+   THE DESK — parse, then audit one entry per request; the ledger fills live.
+   ========================================================================== */
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const TIER = { FABRICATED_CANDIDATE:'b', INCONSISTENT:'b', RETRACTED:'b', BENIGN_DRIFT:'r', UNVERIFIED:'r', REGISTRY_UNREACHABLE:'r', CONSISTENT:'p' };
+  const LABEL = { FABRICATED_CANDIDATE:'Fabricated candidate', INCONSISTENT:'Inconsistent', RETRACTED:'Retracted', BENIGN_DRIFT:'Benign drift', UNVERIFIED:'Unverified', REGISTRY_UNREACHABLE:'Registry unreachable', CONSISTENT:'Consistent' };
+  const tier = (v) => TIER[v] ?? 'r';          // fail closed: unknown verdict → review
+  const input = $('input'), go = $('go'), status = $('status'), bar = $('bar'), empty = $('empty'), cert = $('cert');
+  const groups = { b:$('g-b'), r:$('g-r'), p:$('g-p') };
+  let results = [], running = false;
+
+  const updateCount = () => { const n = input.value.trim() ? input.value.split('\n').length : 0; $('count').textContent = `${n} line${n===1?'':'s'}`; };
+  input.addEventListener('input', updateCount);
+
+  $('sample').addEventListener('click', async () => {
+    const r = await fetch('/sample.bib'); input.value = await r.text(); updateCount(); input.focus();
+  });
+  $('reset').addEventListener('click', () => { input.value=''; updateCount(); clear(); input.focus(); });
+  $('copy').addEventListener('click', async () => {
+    const lines = results.map(r => `${r.verdict.padEnd(20)} ${r.key}${r.notes?.length ? ' — ' + r.notes.join('; ') : ''}`);
+    const counts = tally();
+    const head = `RefGuard report — ${results.length} entries · ${counts.b} blocking · ${counts.r} review · ${counts.p} consistent`;
+    try { await navigator.clipboard.writeText([head, '', ...lines].join('\n')); $('copy').textContent = 'Copied'; setTimeout(() => $('copy').textContent = 'Copy report', 1600); } catch {}
+  });
+
+  function clear(){
+    results = []; cert.className = 'cert'; empty.hidden = false; status.textContent=''; status.className='status'; bar.style.width='0';
+    for (const g of Object.values(groups)){ g.hidden = true; g.querySelector('.rows').innerHTML=''; }
+    renderTally();
+  }
+  function tally(){ const c = {b:0,r:0,p:0}; for (const r of results) c[tier(r.verdict)]++; return c; }
+  function renderTally(){ const c = tally(); const t = $('tally'); t.querySelector('.b b').textContent = c.b; t.querySelector('.r b').textContent = c.r; t.querySelector('.p b').textContent = c.p; }
+  const esc = (s) => { const d = document.createElement('span'); d.textContent = String(s ?? ''); return d.innerHTML; };
+
+  function addRow(r){
+    results.push(r);
+    const k = tier(r.verdict); const g = groups[k]; g.hidden = false; empty.hidden = true;
+    const row = document.createElement('div'); row.className = 'row';
+    const notes = (r.notes||[]).filter(Boolean);
+    row.innerHTML =
+      `<div><span class="stamp ${k}">${esc(LABEL[r.verdict] ?? r.verdict)}</span></div>` +
+      `<div><div class="key">${esc(r.key)}</div>` +
+      (r.title ? `<div class="title">${esc(r.title)}${r.year ? `<i>${esc(r.year)}</i>` : ''}</div>` : '') +
+      (r.truth_title && r.truth_title !== r.title ? `<div class="n"><span class="lbl">Registry</span>${esc(r.truth_title)}</div>` : '') +
+      (notes.length ? `<div class="n"><span class="lbl">Notes</span>${esc(notes.join(' · '))}</div>` : '') +
+      `</div>`;
+    g.querySelector('.rows').appendChild(row);
+    renderTally();
+  }
+
+  function certify(){
+    const c = tally(); const n = results.length;
+    let k, stamp, text;
+    if (c.b) { k='b'; stamp='Cannot certify'; text = `<b>${c.b} blocking</b> verdict${c.b>1?'s':''} out of ${n} entries. Fix or remove these before submission${c.r ? `, and hand-check the ${c.r} in review` : ''}.`; }
+    else if (c.r) { k='r'; stamp='Certified with reservations'; text = `No blocking verdicts, but <b>${c.r} of ${n}</b> could not be settled by the registry. Check those by hand.`; }
+    else { k='p'; stamp='Certified'; text = `All <b>${n} entries</b> match the scholarly record and none is retracted.`; }
+    cert.className = 'cert on ' + k; $('cert-stamp').textContent = stamp; $('cert-text').innerHTML = text;
+  }
+
+  const post = (url, body) => fetch(url, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body) });
+
+  go.addEventListener('click', async () => {
+    const text = input.value.trim(); if (!text || running) return;
+    running = true; go.disabled = true; clear();
+    status.textContent = 'Parsing…';
+    try {
+      const pr = await post('/api/parse', { input:text });
+      const parsed = await pr.json();
+      if (!pr.ok){ status.textContent = parsed.error || `Parse failed (${pr.status})`; status.className='status err'; return; }
+      const entries = parsed.entries;
+      for (let i=0;i<entries.length;i++){
+        status.textContent = `${i+1} / ${entries.length} · asking the registry about ${entries[i].key}…`;
+        bar.style.width = `${((i)/entries.length)*100}%`;
+        const ar = await post('/api/audit-entry', { entry:entries[i] });
+        addRow(ar.ok ? await ar.json() : { key:entries[i].key, title:entries[i].title, year:entries[i].year, verdict:'REGISTRY_UNREACHABLE', notes:[`server error ${ar.status}`] });
+      }
+      bar.style.width = '100%';
+      status.textContent = `${entries.length} entries checked.`;
+      certify();
+    } catch (e) {
+      status.textContent = 'Network problem: the audit cannot certify. ' + e; status.className='status err';
+    } finally { running = false; go.disabled = false; }
+  });
+})();
 </script>
 </body>
 </html>

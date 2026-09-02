@@ -27,8 +27,13 @@ export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; note
     }
   }
 
-  if (entry.year && truth.year) {
-    const dy = Math.abs(Number(entry.year) - Number(truth.year));
+  // A four-digit year on both sides, or there is nothing to compare. A library
+  // record with a blank or zero year used to read as "year off by 2021".
+  const yearOf = (y: string) => (/^\d{4}$/.test(y) && Number(y) > 1000 ? Number(y) : null);
+  const ey = yearOf(entry.year);
+  const ty = yearOf(truth.year);
+  if (ey !== null && ty !== null) {
+    const dy = Math.abs(ey - ty);
     if (dy === 1) {
       notes.push(`year off by 1: ${entry.year} vs ${truth.year} (likely online-first vs print)`);
       drift = true;

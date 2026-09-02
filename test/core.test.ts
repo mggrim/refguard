@@ -471,3 +471,30 @@ test("a title ending in a question mark does not swallow the journal", () => {
   const [ref] = parseTextRefs("Baptista, R., & Swann, P. 1998. Do firms in clusters innovate more? Research Policy, 27(5): 525-540.");
   expect(ref?.title).toBe("Do firms in clusters innovate more?");
 });
+
+describe("comparisons that used to fire on nothing", () => {
+  test("a surname particle is not an author mismatch", () => {
+    // "van Lente" in a library against "Lente" in the draft is one person.
+    expect(authorOverlap(["Lente"], ["van Lente"])).toBe(1);
+    expect(authorOverlap(["van Lente"], ["Lente"])).toBe(1);
+    expect(authorOverlap(["Ven"], ["Van de Ven"])).toBe(1);
+    expect(authorOverlap(["Smith"], ["Jones"])).toBe(0);
+  });
+
+  test("a missing year is not a year mismatch", () => {
+    const entry: RefEntry = {
+      key: "wood2021", title: "Back to the Future", authors: ["Wood"], year: "2021",
+      journal: "Academy of Management Review", doi: "", raw: "x",
+    };
+    const blankYear: Truth = {
+      source: "local", title: "Back to the Future", year: "", journal: "Academy of Management Review",
+      doi: "", authors: ["Wood"], retracted: false,
+    };
+    const zeroYear: Truth = { ...blankYear, year: "0000" };
+    // This reported "year off by 2021: 2021 vs 0000" against a library record
+    // that simply had no year.
+    expect(compare(entry, blankYear).notes.join(" ")).not.toContain("year off by");
+    expect(compare(entry, zeroYear).notes.join(" ")).not.toContain("year off by");
+    expect(compare(entry, blankYear).verdict).not.toBe("INCONSISTENT");
+  });
+});

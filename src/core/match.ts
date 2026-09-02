@@ -43,10 +43,27 @@ export function journalMatch(a: string, b: string): boolean {
 }
 
 /** Fraction of claimed family names confirmed by truth family names; -1 when either side unknown. */
+/**
+ * Nobility and toponymic particles ride with the surname in some registries and
+ * some bibliographies and not others: "van Lente" against "Lente" is the same
+ * person, and reporting it as an author mismatch is a false positive.
+ */
+const NAME_PARTICLES = /^(?:van|von|de|del|della|der|den|di|da|dos|du|la|le|el|al|bin|ben|st|mac|mc)\s+/;
+
+/** Surname key for comparison: accents folded, particles stripped. */
+export function surnameKey(name: string): string {
+  let n = normalize(name);
+  for (;;) {
+    const stripped = n.replace(NAME_PARTICLES, "");
+    if (stripped === n) return n;
+    n = stripped;
+  }
+}
+
 export function authorOverlap(claimed: string[], truth: string[]): number {
   if (!claimed.length || !truth.length) return -1;
-  const truthSet = new Set(truth.map(normalize));
-  const hits = claimed.filter((c) => truthSet.has(normalize(c))).length;
+  const truthSet = new Set(truth.map(surnameKey));
+  const hits = claimed.filter((c) => truthSet.has(surnameKey(c))).length;
   return hits / claimed.length;
 }
 

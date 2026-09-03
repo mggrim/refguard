@@ -33,12 +33,24 @@ export interface Breaker {
 export const newBreaker = (): Breaker => ({ trippedUntil: 0, consecutive: 0 });
 
 /** Consecutive exhausted entries before the rest of the run stops retrying. */
-const BREAKER_TRIP_AFTER = 2;
+/**
+ * One exhausted entry is enough. A credit budget that has run out stays out for
+ * hours, so a second entry spending its full retry ladder to confirm that buys
+ * nothing and costs the reader another wait.
+ */
+const BREAKER_TRIP_AFTER = 1;
 const BREAKER_COOLDOWN_MS = 120_000;
 
 const MAX_RETRIES = 4;
 const RETRY_BASE_MS = 1000;
-const RETRY_CAP_MS = 30_000;
+/**
+ * A person is watching a progress bar. OpenAlex answers a 429 with a Retry-After
+ * measured in tens of seconds, because its free allowance is a DAILY budget rather
+ * than a burst limit, and honouring that literally cost two minutes per entry.
+ * Waiting is pointless when the budget is gone for the day: cap the wait, and let
+ * the breaker and the other registries carry the run.
+ */
+const RETRY_CAP_MS = 4_000;
 
 async function openalexGet(url: string, opts: RegistryOptions, attempt = 0): Promise<unknown | null> {
   const f = opts.fetchFn ?? fetch;

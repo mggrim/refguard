@@ -13,6 +13,9 @@ import { doiHandleExists, newBreaker, openalexByDoi, openalexSearchScored, Regis
  * to Open Library first and still falls back to the article index, and vice versa,
  * so a misread reference costs one extra call rather than a missed match.
  */
+/** One attempt, no backoff: this registry is the understudy, not the lead. */
+const fallbackOpts = (opts: RegistryOptions): RegistryOptions => ({ ...opts, maxRetries: 0 });
+
 async function searchRegistries(
   entry: RefEntry,
   kind: RefKind,
@@ -30,9 +33,12 @@ async function searchRegistries(
       m = await crossrefSearch(entry, opts);
     } catch (e) {
       if (!(e instanceof RegistryUnreachable)) throw e;
-      m = await openalexSearchScored(entry, opts);
+      m = await openalexSearchScored(entry, fallbackOpts(opts));
     }
-    if (!m) m = await openalexSearchScored(entry, opts);
+    // As a FALLBACK the metered search gets one attempt and no retry ladder. It is
+    // usually out of credit, Crossref has already answered or not, and Open Library
+    // is still to come; a retry here only makes the reader wait.
+    if (!m) m = await openalexSearchScored(entry, fallbackOpts(opts));
     if (!m) return null;
     // Crossref does not report retractions reliably. OpenAlex does, and asking it
     // by DOI costs nothing, so a matched DOI is always checked for a retraction.

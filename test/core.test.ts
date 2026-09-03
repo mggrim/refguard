@@ -447,9 +447,10 @@ test("a hard throttle trips the breaker so the rest of the run fails fast", asyn
   const started = Date.now();
   const results = await auditAll(entries, { fetchFn, maxRetries: 1, retryBaseMs: 1 });
   expect(results.every((r) => r.verdict === "REGISTRY_UNREACHABLE")).toBe(true);
-  // Two entries exhaust their retries, then the breaker skips the other six
-  // without a single further request.
-  expect(calls).toBe(4);
+  // The FIRST exhausted entry trips the breaker and the other seven are skipped
+  // without a further request. An exhausted daily budget stays exhausted, so
+  // spending a second entry's retry ladder to confirm it only makes people wait.
+  expect(calls).toBe(1);
   expect(Date.now() - started).toBeLessThan(2000);
 });
 

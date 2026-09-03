@@ -249,3 +249,7 @@ form.audit{margin:0}
 .glossary-inline dd{margin:0;font-size:.86rem;color:var(--ink-2)}
 .glossary-inline dd b{color:var(--ink);font-weight:500}
 @media (max-width:560px){ .glossary-inline dl{grid-template-columns:1fr;gap:.2rem} .glossary-inline dt{margin-top:.5rem} }
+
+/* fallback when the browser refuses the clipboard */
+.report-out{display:block;width:100%;min-height:12rem;margin:.8rem 0 .2rem;padding:.7rem .8rem;background:var(--paper-2);
+            color:var(--ink);border:1px solid var(--rule);border-radius:2px;font:12px/1.6 var(--mono);resize:vertical}

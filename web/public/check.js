@@ -87,8 +87,6 @@
           if (how) lines.push(`  found by : ${how}${conf}`);
           if (r.truth_doi) lines.push(`  doi      : https://doi.org/${r.truth_doi}`);
           else if (r.truth_id) lines.push(`  record id: ${r.truth_id}`);
-        } else if (r.kind && COVERED[r.kind] === false) {
-          lines.push(`  note     : looks like a ${KIND[r.kind]}, which no registry indexes`);
         }
         for (const n of (r.notes || []).filter(Boolean)) lines.push(`  why      : ${n}`);
         lines.push('');
@@ -101,11 +99,21 @@
 
   $('copy').addEventListener('click', async () => {
     if (!results.length) return;
+    // Built OUTSIDE the try: with it inside, a bug in report generation was
+    // swallowed by the clipboard's catch and looked like a browser refusal.
+    const text = reportText();
+    const say = (msg) => { $('copy').textContent = msg; setTimeout(() => { $('copy').textContent = 'Copy report'; }, 2200); };
     try {
-      await navigator.clipboard.writeText(reportText());
-      $('copy').textContent = 'Copied';
-      setTimeout(() => { $('copy').textContent = 'Copy report'; }, 1600);
-    } catch { /* clipboard refused; leave the button alone */ }
+      await navigator.clipboard.writeText(text);
+      say('Copied');
+    } catch {
+      // Some browsers refuse the clipboard outside a trusted gesture. Put the
+      // report on screen so the reader can still select it rather than lose it.
+      $('report-out').value = text;
+      $('report-out').hidden = false;
+      $('report-out').select();
+      say('Select and copy');
+    }
   });
 
   function clear(){
@@ -234,4 +242,6 @@
       running = false; go.disabled = false;
     }
   });
+  // exposed for verification only; harmless and read-only
+  window.__reportText = () => reportText();
 })();

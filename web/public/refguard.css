@@ -239,3 +239,13 @@ form.audit{margin:0}
 .coverage{margin:0 0 1.1rem;padding:.75rem .9rem;border-left:2px solid var(--review);background:var(--review-soft);
           font:400 .86rem/1.5 var(--body);color:var(--ink-2);border-radius:0 2px 2px 0}
 .coverage b{color:var(--ink);font-weight:500}
+
+/* the verdict glossary, opened in place so results survive */
+.glossary-inline{margin-top:1.4rem;padding:1.3rem 1.4rem;border:1px solid var(--rule);background:var(--paper-2)}
+.glossary-inline h3{margin:0 0 .4rem;font:400 1.3rem/1.2 var(--display)}
+.glossary-inline > p{margin:0 0 1.1rem;color:var(--ink-2);font-size:.9rem;text-wrap:pretty}
+.glossary-inline dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:.55rem 1.1rem;align-items:baseline}
+.glossary-inline dt{justify-self:start}
+.glossary-inline dd{margin:0;font-size:.86rem;color:var(--ink-2)}
+.glossary-inline dd b{color:var(--ink);font-weight:500}
+@media (max-width:560px){ .glossary-inline dl{grid-template-columns:1fr;gap:.2rem} .glossary-inline dt{margin-top:.5rem} }

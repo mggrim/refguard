@@ -9,6 +9,16 @@
   const KIND = { journal:'journal article', chapter:'book chapter', book:'book', thesis:'thesis or dissertation', report:'report or working paper', web:'web page or trade press', unknown:'unrecognised type' };
   const KIND_PLURAL = { journal:'journal articles', chapter:'book chapters', book:'books', thesis:'theses and dissertations', report:'reports and working papers', web:'web pages and trade press', unknown:'unrecognised types' };
   const COVERED = { journal:true, chapter:false, book:false, thesis:false, report:false, web:false, unknown:true };
+  const MEANING = {
+    FABRICATED_CANDIDATE: 'the DOI is registered nowhere; 404 at both Crossref and doi.org',
+    INCONSISTENT: 'the paper exists but a field does not belong to it',
+    RETRACTED: 'the registry marks this work retracted',
+    BENIGN_DRIFT: 'formatting, online-first versus print, or a different edition',
+    UNVERIFIED: 'no registry found it; not proof of fabrication',
+    AMBIGUOUS_MATCH: 'a record was found but probably the wrong one; the reference may be fine',
+    REGISTRY_UNREACHABLE: 'a registry could not be reached, so nothing can be certified',
+    CONSISTENT: 'every field matches the registry record',
+  };
   const BASIS = { doi: 'Matched by DOI', search: 'Matched by title search', local: 'Matched in your local library' };
   const tier = (v) => TIER[v] ?? 'r';          // fail closed: an unknown verdict goes to review
   const form = $('audit'), input = $('input'), go = $('go'), status = $('status'), bar = $('bar'), empty = $('empty'), cert = $('cert');
@@ -30,14 +40,69 @@
     input.focus();
   });
 
+  // Opens in place. Sending the reader to the landing page wiped their results.
+  $('explain').addEventListener('click', () => {
+    const box = $('glossary'), btn = $('explain');
+    box.hidden = !box.hidden;
+    btn.setAttribute('aria-expanded', String(!box.hidden));
+    btn.textContent = box.hidden ? 'What the verdicts mean' : 'Hide the verdicts';
+    if (!box.hidden) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+
   $('reset').addEventListener('click', () => { input.value = ''; updateCount(); clear(); input.focus(); });
 
-  $('copy').addEventListener('click', async () => {
-    const lines = results.map((r) => `${r.verdict.padEnd(20)} ${r.key}${r.notes?.length ? ' — ' + r.notes.join('; ') : ''}`);
+  /**
+   * The clipboard report is what someone pastes into an email to a co-author or
+   * keeps beside a submission checklist, so it carries the evidence, not just the
+   * verdict: what was claimed, what record was matched, how it was found, and why
+   * the verdict came out that way.
+   */
+  function reportText(){
     const c = tally();
-    const head = `RefGuard report — ${results.length} entries · ${c.b} blocking · ${c.r} review · ${c.p} consistent`;
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    const lines = [
+      `RefGuard reference report`,
+      `${stamp} UTC · ${location.origin}`,
+      `${results.length} entries · ${c.b} blocking · ${c.r} to review · ${c.p} consistent`,
+      `Checked against Crossref, Open Library and the doi.org handle registry. No AI is used in this audit.`,
+      '',
+    ];
+    const groupsOut = [
+      ['b', 'BLOCKING — fix or remove before submitting'],
+      ['r', 'REVIEW BY HAND — not errors, but not settled either'],
+      ['p', 'CONSISTENT — every field matches the registry record'],
+    ];
+    for (const [k, heading] of groupsOut) {
+      const rows = results.filter((r) => tier(r.verdict) === k);
+      if (!rows.length) continue;
+      lines.push(heading, '-'.repeat(heading.length), '');
+      for (const r of rows) {
+        lines.push(`[${LABEL[r.verdict] ?? r.verdict}]  ${r.key}`);
+        if (r.title) lines.push(`  cited as : ${r.title}${r.year ? ` (${r.year})` : ''}`);
+        if (r.truth_title) {
+          const who = (r.truth_authors || []).slice(0, 4).join(', ') + ((r.truth_authors || []).length > 4 ? ' et al.' : '');
+          lines.push(`  record   : ${r.truth_title}${who ? ` — ${who}` : ''}${r.truth_year ? `, ${r.truth_year}` : ''}`);
+          const how = BASIS[r.match_basis] || r.match_basis || '';
+          const conf = (r.match_confidence != null && r.match_basis === 'search') ? ` (confidence ${r.match_confidence.toFixed(2)})` : '';
+          if (how) lines.push(`  found by : ${how}${conf}`);
+          if (r.truth_doi) lines.push(`  doi      : https://doi.org/${r.truth_doi}`);
+          else if (r.truth_id) lines.push(`  record id: ${r.truth_id}`);
+        } else if (r.kind && COVERED[r.kind] === false) {
+          lines.push(`  note     : looks like a ${KIND[r.kind]}, which no registry indexes`);
+        }
+        for (const n of (r.notes || []).filter(Boolean)) lines.push(`  why      : ${n}`);
+        lines.push('');
+      }
+    }
+    lines.push('What the verdicts mean:');
+    for (const [v, l] of Object.entries(LABEL)) lines.push(`  ${l} — ${MEANING[v]}`);
+    return lines.join('\n');
+  }
+
+  $('copy').addEventListener('click', async () => {
+    if (!results.length) return;
     try {
-      await navigator.clipboard.writeText([head, '', ...lines].join('\n'));
+      await navigator.clipboard.writeText(reportText());
       $('copy').textContent = 'Copied';
       setTimeout(() => { $('copy').textContent = 'Copy report'; }, 1600);
     } catch { /* clipboard refused; leave the button alone */ }

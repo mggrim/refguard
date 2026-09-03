@@ -752,3 +752,16 @@ test("institutional words in an author run are not treated as surnames", () => {
   expect(familyNames("Murphy, L. M., Edwards, P. L., National Renewable Energy Laboratory, & Acme LLC, "))
     .toEqual(["Murphy", "Edwards"]);
 });
+
+test("an APA date carrying a month still parses", () => {
+  // Trade press and reports date to the month, and a year-only parenthesis test
+  // dropped them silently: the entry never reached the registry at all.
+  const refs = parseTextRefs([
+    "Christensen, C. M. (2015, December). What is disruptive innovation? Harvard Business Review. https://hbr.org/2015/12/what-is-disruptive-innovation",
+    "Blank, S. (2013, May 1). Why the lean start-up changes everything. Harvard Business Review, 91(5), 63-72.",
+  ].join("\n\n"));
+  expect(refs.length).toBe(2);
+  expect(refs[0]?.year).toBe("2015");
+  expect(refs[0]?.title).toBe("What is disruptive innovation?");
+  expect(refs[1]?.year).toBe("2013");
+});

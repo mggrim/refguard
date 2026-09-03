@@ -123,7 +123,9 @@ function bibAuthorFamilies(author: string): string[] {
  * APA and friends put the year in parentheses, early, before any other bracket:
  *   Tolbert, P. S., & Zucker, L. G. (1983). Institutional sources of change...
  */
-const REF_SHAPE_APA = /^[^()]{0,250}\(\d{4}[a-z]?\)/;
+// The parenthesis may carry a month or a full date, which trade press and reports
+// routinely do: "(2015, December)", "(2013, May 1)".
+const REF_SHAPE_APA = /^[^()]{0,250}\(\d{4}[a-z]?(?:,\s*[^)]{1,24})?\)/;
 
 /**
  * Academy of Management style — the house style of AMJ, AMR, JOM and the Annals —
@@ -180,7 +182,7 @@ export function parseTextRefs(text: string): RefEntry[] {
   const used = new Set<string>();
   return blocks.map((raw, idx) => {
     const doi = normDoi(trimDoiTail(raw.match(DOI_RE)?.[0] ?? ""));
-    const yearMatch = raw.match(/\((\d{4})[a-z]?\)/) ?? raw.match(/\b((19|20)\d{2})\b/);
+    const yearMatch = raw.match(/\((\d{4})[a-z]?(?:,[^)]*)?\)/) ?? raw.match(/\b((19|20)\d{2})\b/);
     const year = yearMatch ? (yearMatch[1] ?? yearMatch[0]!) : "";
     // Split the block at the year, which sits between the authors and the title in
     // both shapes: "… (1983). Title" and "… 1983. Title".

@@ -99,7 +99,10 @@ export async function registryGet(url: string, opts: RegistryOptions, attempt = 
     resp = await f(url, {
       headers: { "User-Agent": "RefGuard/1.0 (https://github.com/mggrim/refguard)" },
       signal: AbortSignal.timeout(opts.timeoutMs ?? 15000),
-    });
+      ...(opts.cacheTtlSeconds
+        ? { cf: { cacheTtl: opts.cacheTtlSeconds, cacheEverything: true } }
+        : {}),
+    } as RequestInit);
   } catch (e) {
     throw new RegistryUnreachable(String(e));
   }

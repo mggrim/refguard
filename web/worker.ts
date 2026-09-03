@@ -16,6 +16,24 @@ interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> };
   REFGUARD_MAILTO?: string;
   OPENALEX_MAILTO?: string;   // legacy name, still honoured
+  /** Per-IP limiter. Absent in local dev, where the check is skipped. */
+  AUDIT_LIMIT?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
+}
+
+/** A day. Registry records barely change, and the edge cache is what keeps one
+ *  popular bibliography from costing the next reader anything. */
+const REGISTRY_CACHE_SECONDS = 86_400;
+
+/**
+ * Every visitor shares this Worker's egress, so one script looping over 300 entries
+ * would get the whole site throttled by Crossref — exactly the failure the move off
+ * a metered registry was meant to end. The limit is per client IP.
+ */
+async function overLimit(req: Request, env: Env): Promise<boolean> {
+  if (!env.AUDIT_LIMIT) return false;
+  const ip = req.headers.get("cf-connecting-ip") ?? "anonymous";
+  const { success } = await env.AUDIT_LIMIT.limit({ key: ip });
+  return !success;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -40,6 +58,12 @@ export default {
     }
 
     if (url.pathname === "/api/audit-entry" && req.method === "POST") {
+      if (await overLimit(req, env)) {
+        return json(
+          { error: "too many checks from this address in the last minute; wait a moment and try again" },
+          429,
+        );
+      }
       const body = (await req.json().catch(() => null)) as { entry?: RefEntry } | null;
       const e = body?.entry;
       if (!e || typeof e.key !== "string") return json({ error: "missing entry" }, 400);
@@ -52,7 +76,10 @@ export default {
         doi: String(e.doi ?? "").slice(0, 300),
         raw: String(e.raw ?? "").slice(0, 500),
       };
-      const result = await auditEntry(entry, { mailto: env.REFGUARD_MAILTO ?? env.OPENALEX_MAILTO });
+      const result = await auditEntry(entry, {
+        mailto: env.REFGUARD_MAILTO ?? env.OPENALEX_MAILTO,
+        cacheTtlSeconds: REGISTRY_CACHE_SECONDS,
+      });
       return json(result);
     }
 

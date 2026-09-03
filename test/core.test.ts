@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { familyNames, parseBib, parseTextRefs, referencesSection, trimDoiTail } from "../src/core/parse.ts";
+import { familyNames, parseBib, parseTextRefs, referenceKind, referencesSection, REGISTRY_COVERS, trimDoiTail } from "../src/core/parse.ts";
 import { authorOverlap, journalMatch, titleSim } from "../src/core/match.ts";
 import { auditAll, auditEntry, compare } from "../src/core/audit.ts";
 import { openalexByDoi, RegistryUnreachable } from "../src/core/registry.ts";
@@ -548,5 +548,56 @@ describe("the report says how a record was found", () => {
     expect(r.match_basis).toBe("search");
     expect(r.match_confidence).toBeGreaterThan(0.6);
     expect(r.match_confidence).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("reference kind is read from the reference string", () => {
+  const cases: Array<[string, string]> = [
+    ["journal", "Tötterman, H. 2005. Start-ups: Business incubation and social capital. International Small Business Journal, 23(5): 487-511."],
+    ["book", "Weick, K. E. 1995. Sensemaking in organizations (Vol. 3). Thousand Oaks, CA: Sage."],
+    ["book", "Miller, P., & Bound, K. 2011. The startup factories. London: NESTA."],
+    ["thesis", "Christiansen, J. 2009. Copying Y-Combinator. MBA dissertation, University of Cambridge."],
+    ["report", "van Huijgevoort, T. 2012. The business accelerator. Working paper, Utrecht University."],
+    ["web", "Strauss, K. 2013. Why coworking spaces are here to stay. Forbes. https://www.forbes.com/sites/karstenstrauss/"],
+    ["chapter", "Soubliere, J.-F. 2022. Cultural entrepreneurship. In C. Lockwood & J. Soubliere (Eds.), Advances in cultural entrepreneurship."],
+  ];
+  for (const [expected, raw] of cases) {
+    test(expected, () => expect(referenceKind(raw)).toBe(expected));
+  }
+
+  test("the registry is only expected to cover serials", () => {
+    expect(REGISTRY_COVERS.journal).toBe(true);
+    expect(REGISTRY_COVERS.book).toBe(false);
+    expect(REGISTRY_COVERS.thesis).toBe(false);
+  });
+});
+
+describe("a generic title that matches the wrong work is not called an error", () => {
+  const wrongWork = { results: [{
+    id: "https://openalex.org/W9", doi: null, display_name: "Designing qualitative research",
+    publication_year: 1989, is_retracted: false,
+    primary_location: { source: { display_name: "Some Journal" } },
+    authorships: [{ author: { display_name: "Farnaz Ahmadi" } }, { author: { display_name: "Maryam Kaveh" } }],
+  }] };
+  const fetchFn = (async () => new Response(JSON.stringify(wrongWork), { status: 200 })) as unknown as typeof fetch;
+
+  test("short title, no shared author, no DOI anchor -> AMBIGUOUS_MATCH", async () => {
+    const entry: RefEntry = {
+      key: "marshall1995", title: "Designing Qualitative Research",
+      authors: ["Marshall", "Rossman"], year: "1995", journal: "", doi: "", raw: "x",
+    };
+    const r = await auditEntry(entry, { fetchFn });
+    expect(r.verdict).toBe("AMBIGUOUS_MATCH");
+    expect(BLOCKING_VERDICTS).not.toContain(r.verdict);
+    expect(r.notes[0]).toContain("too general");
+  });
+
+  test("a distinctive title with the same disagreement stays a real error", async () => {
+    const entry: RefEntry = {
+      key: "x2010", title: "Designing qualitative research across four longitudinal comparative field sites",
+      authors: ["Marshall", "Rossman"], year: "1995", journal: "", doi: "", raw: "x",
+    };
+    const r = await auditEntry(entry, { fetchFn });
+    expect(r.verdict).not.toBe("AMBIGUOUS_MATCH");
   });
 });

@@ -1,5 +1,6 @@
 import type { AuditResult, LocalHit, LocalLibrary, MatchBasis, RefEntry, Truth, Verdict } from "./types.ts";
-import { authorOverlap, journalMatch, titleSim } from "./match.ts";
+import { REF_KIND_LABEL, REGISTRY_COVERS, referenceKind } from "./parse.ts";
+import { authorOverlap, GENERIC_TITLE_TOKENS, journalMatch, titleDistinctiveness, titleSim } from "./match.ts";
 import { doiHandleExists, newBreaker, openalexByDoi, openalexSearchScored, RegistryUnreachable, type RegistryOptions } from "./registry.ts";
 
 export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; notes: string[] } {
@@ -82,6 +83,7 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
     key: entry.key,
     title: entry.title,
     year: entry.year,
+    kind: referenceKind(entry.raw || entry.title),
     truth_source: null as string | null,
     truth_title: null as string | null,
     match_basis: null as MatchBasis | null,
@@ -234,7 +236,9 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
         ...base,
         verdict: "UNVERIFIED",
         notes: [
-          "no registry match by DOI/title/author and not in the local library; verify by hand — could be fabricated or obscure",
+          REGISTRY_COVERS[base.kind]
+            ? "no registry match by DOI, title or author, and not in the local library; verify by hand"
+            : `this looks like a ${REF_KIND_LABEL[base.kind]}, which the registry does not index; not a sign of a bad reference, but check it by hand`,
         ],
         truth_source: null,
         truth_title: null,
@@ -261,6 +265,26 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
           "matched by title/author search, not DOI — year gap likely a different edition or online-first record; confirm the year by hand",
         ],
       };
+    }
+    // "Your reference is wrong" and "the wrong paper was matched" both show as a
+    // field mismatch, and they call for opposite responses from the author. What
+    // separates them is whether the title could identify the work on its own: a
+    // distinctive title that matched IS the right paper, so a disagreement is a
+    // real error, while a generic title with no author in common and no DOI anchor
+    // is far more likely to be a different work with the same name.
+    if (c.verdict === "INCONSISTENT" && basis === "search") {
+      const overlap = authorOverlap(entry.authors, truth.authors);
+      const generic = titleDistinctiveness(entry.title) < GENERIC_TITLE_TOKENS;
+      if (overlap === 0 && generic) {
+        return {
+          ...withTruth(truth, "search", score),
+          verdict: "AMBIGUOUS_MATCH",
+          notes: [
+            `"${entry.title}" is too general to identify a work on its own, and no author matches, so this is probably a different work with the same title rather than an error in your reference`,
+            ...c.notes,
+          ],
+        };
+      }
     }
     return { ...withTruth(truth, basis ?? "search", score), verdict: c.verdict, notes: c.notes };
   } catch (e) {

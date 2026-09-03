@@ -259,3 +259,53 @@ export function familyNames(authorSeg: string): string[] {
   if (compact.length) return compact;
   return [...authorSeg.matchAll(/([\p{Lu}][\p{L}\p{M}'\u2019-]+),/gu)].map((m) => m[1]!);
 }
+
+/** What kind of source a reference describes, judged from the reference string alone. */
+export type RefKind = "journal" | "chapter" | "book" | "thesis" | "report" | "web" | "unknown";
+
+export const REF_KIND_PLURAL: Record<RefKind, string> = {
+  journal: "journal articles",
+  chapter: "book chapters",
+  book: "books",
+  thesis: "theses and dissertations",
+  report: "reports and working papers",
+  web: "web pages and trade press",
+  unknown: "unrecognised types",
+};
+
+export const REF_KIND_LABEL: Record<RefKind, string> = {
+  journal: "journal article",
+  chapter: "book chapter",
+  book: "book",
+  thesis: "thesis or dissertation",
+  report: "report or working paper",
+  web: "web page or trade press",
+  unknown: "unrecognised type",
+};
+
+/**
+ * Registries index the scholarly literature, not everything scholars cite. A book,
+ * a thesis, a consultancy report and a Forbes column are not failures of the check,
+ * they are outside what OpenAlex covers, and telling an author that seven of their
+ * references "could be fabricated" when four of them are books is alarming and
+ * wrong. Classify from the reference string, before any lookup.
+ */
+export function referenceKind(raw: string): RefKind {
+  const s = raw.replace(/\s+/g, " ");
+  if (/\b(doctoral|master'?s?|PhD|Ph\.?D\.?|MSc|MA|MBA)?\s*(dissertation|thesis)\b/i.test(s)) return "thesis";
+  if (/\bIn:?\s+[A-Z]/.test(s) && /\(\s*Eds?\.?\s*\)/i.test(s)) return "chapter";
+  // A volume(issue) or "pp." run is the signature of an article in a serial.
+  if (/\b\d{1,4}\s*\(\s*\d{1,4}\s*\)/.test(s) || /\bpp?\.\s*\d+/.test(s)) return "journal";
+  if (/\b(working paper|technical report|white ?paper|policy brief|research report)\b/i.test(s)) return "report";
+  // "Place: Publisher" with no serial numbering is a monograph.
+  // "Place: Publisher", optionally with a US state ("Thousand Oaks, CA: Sage").
+  if (/[.,]\s*[A-Z][A-Za-z.\-' ]{2,30}(?:,\s*[A-Z]{2})?:\s*[A-Z]/.test(s) || /\(\s*Vol\.?\s*\d+/i.test(s) || /\b\d(?:st|nd|rd|th)\s+ed(?:ition|\.)/i.test(s)) return "book";
+  if (/https?:\/\//i.test(s) && !/doi\.org|\b10\.\d{4,9}\//.test(s)) return "web";
+  if (/\bRetrieved from\b/i.test(s)) return "web";
+  return "unknown";
+}
+
+/** Registries cover serials well and everything else poorly. */
+export const REGISTRY_COVERS: Record<RefKind, boolean> = {
+  journal: true, chapter: false, book: false, thesis: false, report: false, web: false, unknown: true,
+};

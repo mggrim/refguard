@@ -18,6 +18,9 @@ import {
   BLOCKING_VERDICTS,
   DOI_RE,
   MATCH_BASIS_LABEL,
+  REF_KIND_LABEL,
+  REF_KIND_PLURAL,
+  REGISTRY_COVERS,
   referencesSection,
   trimDoiTail,
   normDoi,
@@ -54,7 +57,7 @@ function render(results: AuditResult[], label: string): string {
   lines.push(Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(" · "), "");
   const blocking = results.filter((r) => (BLOCKING_VERDICTS as readonly string[]).includes(r.verdict));
   const review = results.filter((r) =>
-    ["BENIGN_DRIFT", "UNVERIFIED", "REGISTRY_UNREACHABLE"].includes(r.verdict),
+    ["BENIGN_DRIFT", "UNVERIFIED", "AMBIGUOUS_MATCH", "REGISTRY_UNREACHABLE"].includes(r.verdict),
   );
   const label_ = (r: AuditResult) => (r.title ? `${r.key} "${r.title.slice(0, 55)}"` : r.key);
   /**
@@ -80,6 +83,20 @@ function render(results: AuditResult[], label: string): string {
     lines.push(`🛑 BLOCKING (${blocking.length}):`);
     for (const r of blocking) { lines.push(`  [${r.verdict}] ${label_(r)}: ${r.notes.join("; ")}`); lines.push(...matched(r)); }
     lines.push("");
+  }
+  // Name what the registry simply does not index, rather than repeating
+  // "could be fabricated" over a pile of books and reports.
+  const uncovered = results.filter((r) => r.verdict === "UNVERIFIED" && !REGISTRY_COVERS[r.kind]);
+  if (uncovered.length) {
+    const byKind = new Map<string, number>();
+    for (const r of uncovered) byKind.set(r.kind, (byKind.get(r.kind) ?? 0) + 1);
+    const parts = [...byKind].map(([k, n]) =>
+      `${n} ${n === 1 ? REF_KIND_LABEL[k as keyof typeof REF_KIND_LABEL] : REF_KIND_PLURAL[k as keyof typeof REF_KIND_PLURAL]}`);
+    lines.push(
+      `📚 OUTSIDE THE REGISTRY (${uncovered.length}): ${parts.join(", ")}.`,
+      "   These are not indexed by OpenAlex, so a miss here says nothing about the reference. Check by hand.",
+      "",
+    );
   }
   if (review.length) {
     lines.push(`⚠️ REVIEW (${review.length}):`);

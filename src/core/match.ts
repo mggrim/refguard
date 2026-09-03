@@ -17,6 +17,19 @@ export function tokens(s: string): string[] {
     .filter((t) => t && !STOPWORDS.has(t));
 }
 
+/**
+ * How much a title can identify a work on its own. "Designing Qualitative Research"
+ * carries three ordinary words that many works share; "Building Sustainable Hybrid
+ * Organizations: The Case of Commercial Microfinance Organizations" carries eight
+ * that essentially one work shares. Below the threshold, a title match is a guess.
+ */
+export function titleDistinctiveness(title: string): number {
+  return tokens(title).length;
+}
+
+/** Fewer significant tokens than this and a title alone cannot identify a work. */
+export const GENERIC_TITLE_TOKENS = 5;
+
 /** Symmetric token similarity with containment credit (handles dropped subtitles). */
 export function titleSim(a: string, b: string): number {
   const ta = new Set(tokens(a));

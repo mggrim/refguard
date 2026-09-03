@@ -4,8 +4,11 @@
    ========================================================================== */
 (() => {
   const $ = (id) => document.getElementById(id);
-  const TIER = { FABRICATED_CANDIDATE:'b', INCONSISTENT:'b', RETRACTED:'b', BENIGN_DRIFT:'r', UNVERIFIED:'r', REGISTRY_UNREACHABLE:'r', CONSISTENT:'p' };
-  const LABEL = { FABRICATED_CANDIDATE:'Fabricated candidate', INCONSISTENT:'Inconsistent', RETRACTED:'Retracted', BENIGN_DRIFT:'Benign drift', UNVERIFIED:'Unverified', REGISTRY_UNREACHABLE:'Registry unreachable', CONSISTENT:'Consistent' };
+  const TIER = { FABRICATED_CANDIDATE:'b', INCONSISTENT:'b', RETRACTED:'b', BENIGN_DRIFT:'r', UNVERIFIED:'r', AMBIGUOUS_MATCH:'r', REGISTRY_UNREACHABLE:'r', CONSISTENT:'p' };
+  const LABEL = { FABRICATED_CANDIDATE:'Fabricated candidate', INCONSISTENT:'Inconsistent', RETRACTED:'Retracted', BENIGN_DRIFT:'Benign drift', UNVERIFIED:'Unverified', AMBIGUOUS_MATCH:'Ambiguous match', REGISTRY_UNREACHABLE:'Registry unreachable', CONSISTENT:'Consistent' };
+  const KIND = { journal:'journal article', chapter:'book chapter', book:'book', thesis:'thesis or dissertation', report:'report or working paper', web:'web page or trade press', unknown:'unrecognised type' };
+  const KIND_PLURAL = { journal:'journal articles', chapter:'book chapters', book:'books', thesis:'theses and dissertations', report:'reports and working papers', web:'web pages and trade press', unknown:'unrecognised types' };
+  const COVERED = { journal:true, chapter:false, book:false, thesis:false, report:false, web:false, unknown:true };
   const BASIS = { doi: 'Matched by DOI', search: 'Matched by title search', local: 'Matched in your local library' };
   const tier = (v) => TIER[v] ?? 'r';          // fail closed: an unknown verdict goes to review
   const form = $('audit'), input = $('input'), go = $('go'), status = $('status'), bar = $('bar'), empty = $('empty'), cert = $('cert');
@@ -48,6 +51,7 @@
     status.className = 'status';
     bar.style.width = '0';
     for (const g of Object.values(groups)) { g.hidden = true; g.querySelector('.rows').innerHTML = ''; }
+    $('coverage').hidden = true;
     renderTally();
   }
 
@@ -101,6 +105,20 @@
     renderTally();
   }
 
+  // Name what the registry does not index, instead of repeating "could be
+  // fabricated" over a pile of books and reports.
+  function renderCoverage(){
+    const out = results.filter((r) => r.verdict === 'UNVERIFIED' && COVERED[r.kind] === false);
+    const box = $('coverage');
+    if (!out.length) { box.hidden = true; return; }
+    const counts = {};
+    for (const r of out) counts[r.kind] = (counts[r.kind] || 0) + 1;
+    const parts = Object.entries(counts).map(([k, n]) => `${n} ${n === 1 ? (KIND[k] || k) : (KIND_PLURAL[k] || k)}`);
+    box.innerHTML = `<b>${out.length} of these are outside the registry:</b> ${esc(parts.join(', '))}. ` +
+      `OpenAlex indexes journal articles, so a miss here says nothing about the reference itself. Check them by hand.`;
+    box.hidden = false;
+  }
+
   function certify(){
     const c = tally(), n = results.length;
     let k, stamp, text;
@@ -142,6 +160,7 @@
       }
       bar.style.width = '100%';
       status.textContent = `${entries.length} entries checked.`;
+      renderCoverage();
       certify();
     } catch (err) {
       status.textContent = `The registry could not be reached, so nothing can be certified. ${err}`;

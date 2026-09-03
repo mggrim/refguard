@@ -5,6 +5,7 @@ export type Verdict =
   | "FABRICATED_CANDIDATE"
   | "RETRACTED"
   | "UNVERIFIED"
+  | "AMBIGUOUS_MATCH"
   | "REGISTRY_UNREACHABLE";
 
 export const BLOCKING_VERDICTS: readonly Verdict[] = [
@@ -51,6 +52,8 @@ export interface AuditResult {
    * from "I probably matched the wrong paper".
    */
   match_basis: MatchBasis | null;
+  /** What kind of source the reference describes, and whether a registry covers it. */
+  kind: RefKind;
   /** Search score of the accepted match, 0-1. Null when the match needed no scoring. */
   match_confidence: number | null;
   /** The matched record's own identity, so a wrong match is visible at a glance. */
@@ -61,6 +64,8 @@ export interface AuditResult {
   local_id: number | string | null;
   local_pdf: string | null;
 }
+
+import type { RefKind } from "./parse.ts";
 
 export type MatchBasis = "doi" | "search" | "local";
 

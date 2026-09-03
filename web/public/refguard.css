@@ -25,6 +25,10 @@
 }
 
 *{box-sizing:border-box}
+/* The `hidden` attribute is only display:none in the UA stylesheet, so ANY author
+   `display` rule silently beats it. Stating it once here means a new component can
+   never accidentally show an element the script is toggling. */
+[hidden]{display:none !important}
 html{scroll-behavior:smooth}
 @media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} }
 body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.55 var(--body);

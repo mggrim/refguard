@@ -3,6 +3,7 @@ import type { RefKind } from "./parse.ts";
 import type { SearchMatch } from "./registry.ts";
 import { REF_KIND_LABEL, REGISTRY_COVERS, referenceKind } from "./parse.ts";
 import { openLibrarySearch } from "./openlibrary.ts";
+import { crossrefIsBookish, crossrefSearch } from "./crossref.ts";
 import { authorOverlap, GENERIC_TITLE_TOKENS, journalMatch, titleDistinctiveness, titleSim } from "./match.ts";
 import { doiHandleExists, newBreaker, openalexByDoi, openalexSearchScored, RegistryUnreachable, type RegistryOptions } from "./registry.ts";
 
@@ -22,8 +23,26 @@ async function searchRegistries(
   // a book index, so don't spend a call on it. Anything else gets both.
   const bookWorthTrying = booky || kind === "unknown";
   const article = async () => {
-    const m = await openalexSearchScored(entry, opts);
-    return m ? { match: m, basis: "search" as MatchBasis } : null;
+    // Crossref carries the search load because OpenAlex meters it; OpenAlex is the
+    // fallback so a Crossref outage does not take the article path down with it.
+    let m: SearchMatch | null = null;
+    try {
+      m = await crossrefSearch(entry, opts);
+    } catch (e) {
+      if (!(e instanceof RegistryUnreachable)) throw e;
+      m = await openalexSearchScored(entry, opts);
+    }
+    if (!m) m = await openalexSearchScored(entry, opts);
+    if (!m) return null;
+    // Crossref does not report retractions reliably. OpenAlex does, and asking it
+    // by DOI costs nothing, so a matched DOI is always checked for a retraction.
+    if (m.truth.source === "crossref" && m.truth.doi) {
+      try {
+        const confirmed = await openalexByDoi(m.truth.doi, opts);
+        if (confirmed?.retracted) m = { ...m, truth: { ...m.truth, retracted: true, id: confirmed.id } };
+      } catch { /* the retraction check is best-effort; a Crossref match still stands */ }
+    }
+    return { match: m, basis: "search" as MatchBasis };
   };
   const book = async () => {
     const m = await openLibrarySearch(entry, opts);
@@ -88,7 +107,14 @@ export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; note
     blocking = true;
   }
 
-  const ao = authorOverlap(entry.authors, truth.authors);
+  // Open Library work records routinely carry only the first author, so a partial
+  // overlap there is a gap in its data rather than a disagreement. The first
+  // claimed author agreeing is all the confirmation that record can offer.
+  const firstAuthorConfirmed =
+    truth.source === "openlibrary" &&
+    entry.authors.length > 0 &&
+    authorOverlap(entry.authors.slice(0, 1), truth.authors) === 1;
+  const ao = firstAuthorConfirmed ? 1 : authorOverlap(entry.authors, truth.authors);
   if (ao >= 0 && ao < 0.5) {
     notes.push(
       `author mismatch: claimed [${entry.authors.join(", ")}] vs registry [${truth.authors.slice(0, 6).join(", ")}]`,
@@ -276,8 +302,8 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
         verdict: "UNVERIFIED",
         notes: [
           REGISTRY_COVERS[base.kind]
-            ? "no registry match by DOI, title or author, and not in the local library; verify by hand"
-            : `this looks like a ${REF_KIND_LABEL[base.kind]}, which the registry does not index; not a sign of a bad reference, but check it by hand`,
+            ? "no match at Crossref, OpenAlex or Open Library, and not in your local library; verify by hand"
+            : `this looks like a ${REF_KIND_LABEL[base.kind]}, which no registry indexes; not a sign of a bad reference, but check it by hand`,
         ],
         truth_source: null,
         truth_title: null,
@@ -334,15 +360,20 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
     // distinctive title that matched IS the right paper, so a disagreement is a
     // real error, while a generic title with no author in common and no DOI anchor
     // is far more likely to be a different work with the same name.
-    if (c.verdict === "INCONSISTENT" && basis === "search") {
+    if (c.verdict === "INCONSISTENT" && (basis === "search" || basis === "book")) {
+      // If the right work had been matched, at least ONE author would agree. With no
+      // DOI anchor and no author in common, "your reference is wrong" and "the wrong
+      // work was matched" are indistinguishable, and asserting the first is how the
+      // tool told an author their correct Blank 2013 citation was a Rasmussen paper.
       const overlap = authorOverlap(entry.authors, truth.authors);
-      const generic = titleDistinctiveness(entry.title) < GENERIC_TITLE_TOKENS;
-      if (overlap === 0 && generic) {
+      if (overlap === 0) {
         return {
           ...withTruth(truth, "search", score),
           verdict: "AMBIGUOUS_MATCH",
           notes: [
-            `"${entry.title}" is too general to identify a work on its own, and no author matches, so this is probably a different work with the same title rather than an error in your reference`,
+            titleDistinctiveness(entry.title) < GENERIC_TITLE_TOKENS
+              ? `"${entry.title}" is too general to identify a work on its own, and no author matches, so this is probably a different work with the same title rather than an error in your reference`
+              : "no author matches and there is no DOI to anchor the match, so this is more likely a different work than an error in your reference; confirm against the record below",
             ...c.notes,
           ],
         };

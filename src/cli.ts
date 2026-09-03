@@ -94,7 +94,7 @@ function render(results: AuditResult[], label: string): string {
       `${n} ${n === 1 ? REF_KIND_LABEL[k as keyof typeof REF_KIND_LABEL] : REF_KIND_PLURAL[k as keyof typeof REF_KIND_PLURAL]}`);
     lines.push(
       `📚 OUTSIDE THE REGISTRY (${uncovered.length}): ${parts.join(", ")}.`,
-      "   These are not indexed by OpenAlex, so a miss here says nothing about the reference. Check by hand.",
+      "   No registry indexes these, so a miss here says nothing about the reference. Check by hand.",
       "",
     );
   }

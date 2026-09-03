@@ -115,7 +115,7 @@
     for (const r of out) counts[r.kind] = (counts[r.kind] || 0) + 1;
     const parts = Object.entries(counts).map(([k, n]) => `${n} ${n === 1 ? (KIND[k] || k) : (KIND_PLURAL[k] || k)}`);
     box.innerHTML = `<b>${out.length} of these are outside the registry:</b> ${esc(parts.join(', '))}. ` +
-      `OpenAlex indexes journal articles, so a miss here says nothing about the reference itself. Check them by hand.`;
+      `The registries index journal articles and books, so a miss here says nothing about the reference itself. Check them by hand.`;
     box.hidden = false;
   }
 

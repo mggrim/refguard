@@ -250,15 +250,27 @@ export function referencesSection(text: string): string | null {
  * dozen perfectly good references as INCONSISTENT. Periods on the initials are
  * what separate the shapes, so the punctuated form is tried first.
  */
+/** Words that appear in an author run but are part of an organisation, not a person. */
+const NOT_A_SURNAME = new Set([
+  "laboratory", "laboratories", "llc", "ltd", "inc", "incorporated", "university",
+  "institute", "college", "corporation", "corp", "company", "association", "council",
+  "department", "ministry", "commission", "foundation", "society", "group", "center", "centre",
+]);
+
 export function familyNames(authorSeg: string): string[] {
   const punctuated = [...authorSeg.matchAll(/([\p{Lu}][\p{L}\p{M}'\u2019-]+),\s*(?:[\p{Lu}]\.\s*)+/gu)]
     .map((m) => m[1]!);
-  if (punctuated.length) return punctuated;
+  if (punctuated.length) return dropOrganisations(punctuated);
   const compact = [...authorSeg.matchAll(/([\p{Lu}][\p{L}\p{M}'\u2019-]+)\s+[\p{Lu}]{1,3}(?=[,.]|\s|$)/gu)]
     .map((m) => m[1]!);
-  if (compact.length) return compact;
-  return [...authorSeg.matchAll(/([\p{Lu}][\p{L}\p{M}'\u2019-]+),/gu)].map((m) => m[1]!);
+  if (compact.length) return dropOrganisations(compact);
+  return dropOrganisations([...authorSeg.matchAll(/([\p{Lu}][\p{L}\p{M}'\u2019-]+),/gu)].map((m) => m[1]!));
 }
+
+const dropOrganisations = (names: string[]): string[] => {
+  const people = names.filter((n) => !NOT_A_SURNAME.has(n.toLowerCase()));
+  return people.length ? people : names;   // never return nothing
+};
 
 /** What kind of source a reference describes, judged from the reference string alone. */
 export type RefKind = "journal" | "chapter" | "book" | "thesis" | "report" | "web" | "unknown";

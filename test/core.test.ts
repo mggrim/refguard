@@ -599,13 +599,41 @@ describe("a generic title that matches the wrong work is not called an error", (
     expect(r.notes[0]).toContain("too general");
   });
 
-  test("a distinctive title with the same disagreement stays a real error", async () => {
+  test("a DOI anchor makes the same disagreement a real error", async () => {
+    // The DOI, not the title's length, is what settles which work was matched.
+    // Real drafts produced wrong matches on long distinctive titles too: "Why the
+    // Lean Start-Up Changes Everything" matched a paper by different authors
+    // entirely, so title length turned out to be the wrong discriminator.
+    const anchored = (async (url: string) =>
+      String(url).includes("works/doi:")
+        ? new Response(JSON.stringify({
+            id: "https://openalex.org/W9", doi: "https://doi.org/10.1234/abcd",
+            display_name: "Designing qualitative research", publication_year: 1989, is_retracted: false,
+            primary_location: { source: { display_name: "" } },
+            authorships: [{ author: { display_name: "Farnaz Ahmadi" } }],
+          }), { status: 200 })
+        : new Response("{}", { status: 200 })) as unknown as typeof fetch;
     const entry: RefEntry = {
-      key: "x2010", title: "Designing qualitative research across four longitudinal comparative field sites",
-      authors: ["Marshall", "Rossman"], year: "1995", journal: "", doi: "", raw: "x",
+      key: "marshall1995", title: "Designing Qualitative Research",
+      authors: ["Marshall", "Rossman"], year: "1995", journal: "", doi: "10.1234/abcd", raw: "x",
     };
-    const r = await auditEntry(entry, { fetchFn });
-    expect(r.verdict).not.toBe("AMBIGUOUS_MATCH");
+    const r = await auditEntry(entry, { fetchFn: anchored });
+    expect(r.verdict).toBe("INCONSISTENT");
+  });
+
+  test("Open Library listing only the first author is not a disagreement", async () => {
+    // OL work records routinely carry one author; three claimed against one listed
+    // reported correct book citations as errors in four real drafts.
+    const ol = (async (url: string) =>
+      String(url).includes("openlibrary.org")
+        ? new Response(JSON.stringify({ docs: [{ title: "An introduction to reasoning", author_name: ["Stephen Toulmin"], first_publish_year: 1979, edition_count: 1, key: "/works/OL5W" }] }), { status: 200 })
+        : new Response(JSON.stringify({ results: [] }), { status: 200 })) as unknown as typeof fetch;
+    const r = await auditEntry({
+      key: "toulmin1979", title: "An introduction to reasoning", authors: ["Toulmin", "Rieke", "Janik"],
+      year: "1979", journal: "", doi: "",
+      raw: "Toulmin, S., Rieke, R., & Janik, A. 1979. An introduction to reasoning. New York: Macmillan.",
+    }, { fetchFn: ol });
+    expect(r.verdict).toBe("CONSISTENT");
   });
 });
 
@@ -666,4 +694,64 @@ test("edition furniture is stripped before querying the book index", () => {
     .toBe("Sensemaking in organizations Weick");
   expect(bookQuery({ key: "r", title: "Case study research: Design and methods, 3rd edition", authors: ["Yin"], year: "2003", journal: "", doi: "", raw: "x" }))
     .toBe("Case study research Design and methods Yin");
+});
+
+describe("Crossref carries the article search", () => {
+  const xrefItem = {
+    DOI: "10.2307/2392383",
+    title: ["Institutional Sources of Change in the Formal Structure of Organizations"],
+    author: [{ family: "Tolbert" }, { family: "Zucker" }],
+    issued: { "date-parts": [[1983, 3]] },
+    "container-title": ["Administrative Science Quarterly"],
+    type: "journal-article",
+  };
+  const entry: RefEntry = {
+    key: "tolbert1983", title: "Institutional Sources of Change in the Formal Structure of Organizations",
+    authors: ["Tolbert", "Zucker"], year: "1983", journal: "Administrative Science Quarterly", doi: "",
+    raw: "Tolbert, P. S., & Zucker, L. G. (1983). Institutional sources of change. Administrative Science Quarterly, 28(1), 22-39.",
+  };
+
+  test("a DOI-less article is resolved through Crossref, not the metered search", async () => {
+    let openalexSearches = 0;
+    const fetchFn = (async (url: string) => {
+      const u = String(url);
+      if (u.includes("api.crossref.org")) return new Response(JSON.stringify({ message: { items: [xrefItem] } }), { status: 200 });
+      if (u.includes("api.openalex.org/works?search")) { openalexSearches++; return new Response(JSON.stringify({ results: [] }), { status: 200 }); }
+      if (u.includes("api.openalex.org/works/doi:")) return new Response(JSON.stringify({ id: "https://openalex.org/W1", display_name: xrefItem.title[0], publication_year: 1983, is_retracted: false, primary_location: { source: { display_name: "Administrative Science Quarterly" } }, authorships: [], doi: "10.2307/2392383" }), { status: 200 });
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    const r = await auditEntry(entry, { fetchFn });
+    expect(r.verdict).toBe("CONSISTENT");
+    expect(r.truth_source).toBe("crossref");
+    expect(r.truth_doi).toBe("10.2307/2392383");
+    expect(openalexSearches).toBe(0);   // the expensive endpoint is never touched
+  });
+
+  test("a Crossref match is still checked for a retraction, which Crossref does not report", async () => {
+    const fetchFn = (async (url: string) => {
+      const u = String(url);
+      if (u.includes("api.crossref.org")) return new Response(JSON.stringify({ message: { items: [xrefItem] } }), { status: 200 });
+      if (u.includes("api.openalex.org/works/doi:")) return new Response(JSON.stringify({ id: "https://openalex.org/W7", display_name: xrefItem.title[0], publication_year: 1983, is_retracted: true, primary_location: { source: { display_name: "Administrative Science Quarterly" } }, authorships: [], doi: "10.2307/2392383" }), { status: 200 });
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    const r = await auditEntry(entry, { fetchFn });
+    expect(r.verdict).toBe("RETRACTED");
+  });
+
+  test("a Crossref outage falls through to OpenAlex rather than failing the entry", async () => {
+    const fetchFn = (async (url: string) => {
+      const u = String(url);
+      if (u.includes("api.crossref.org")) return new Response("", { status: 503 });
+      if (u.includes("api.openalex.org/works?search")) return new Response(JSON.stringify({ results: [{ id: "https://openalex.org/W2", doi: "https://doi.org/10.2307/2392383", display_name: xrefItem.title[0], publication_year: 1983, is_retracted: false, primary_location: { source: { display_name: "Administrative Science Quarterly" } }, authorships: [{ author: { display_name: "Pamela Tolbert" } }, { author: { display_name: "Lynne Zucker" } }] }] }), { status: 200 });
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    const r = await auditEntry(entry, { fetchFn });
+    expect(r.verdict).toBe("CONSISTENT");
+    expect(r.truth_source).toBe("openalex");
+  });
+});
+
+test("institutional words in an author run are not treated as surnames", () => {
+  expect(familyNames("Murphy, L. M., Edwards, P. L., National Renewable Energy Laboratory, & Acme LLC, "))
+    .toEqual(["Murphy", "Edwards"]);
 });

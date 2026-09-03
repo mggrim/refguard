@@ -19,7 +19,7 @@
     REGISTRY_UNREACHABLE: 'a registry could not be reached, so nothing can be certified',
     CONSISTENT: 'every field matches the registry record',
   };
-  const BASIS = { doi: 'Matched by DOI', search: 'Matched by title search', local: 'Matched in your local library' };
+  const BASIS = { doi: 'Matched by DOI', search: 'Matched by reference search', local: 'Matched in your local library' };
   const tier = (v) => TIER[v] ?? 'r';          // fail closed: an unknown verdict goes to review
   const form = $('audit'), input = $('input'), go = $('go'), status = $('status'), bar = $('bar'), empty = $('empty'), cert = $('cert');
   const groups = { b:$('g-b'), r:$('g-r'), p:$('g-p') };

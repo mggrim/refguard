@@ -64,7 +64,9 @@ export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; note
   if (truth.retracted) {
     return {
       verdict: "RETRACTED",
-      notes: [`registry marks this work retracted (${truth.id ?? truth.source})`],
+      // The identifier is printed on its own line in every report, so repeating it
+      // here just made the sentence longer.
+      notes: ["the Retraction Watch database records this work as retracted"],
     };
   }
 

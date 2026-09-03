@@ -3,9 +3,9 @@ import type { RefKind } from "./parse.ts";
 import type { SearchMatch } from "./registry.ts";
 import { REF_KIND_LABEL, REGISTRY_COVERS, referenceKind } from "./parse.ts";
 import { openLibrarySearch } from "./openlibrary.ts";
-import { crossrefIsBookish, crossrefSearch } from "./crossref.ts";
+import { crossrefByDoi, crossrefSearch } from "./crossref.ts";
 import { authorOverlap, GENERIC_TITLE_TOKENS, journalMatch, titleDistinctiveness, titleSim } from "./match.ts";
-import { doiHandleExists, newBreaker, openalexByDoi, openalexSearchScored, RegistryUnreachable, type RegistryOptions } from "./registry.ts";
+import { doiHandleExists, newBreaker, RegistryUnreachable, type RegistryOptions } from "./registry.ts";
 
 /**
  * Which registry to ask, and in what order. The kind is read from the reference
@@ -13,9 +13,6 @@ import { doiHandleExists, newBreaker, openalexByDoi, openalexSearchScored, Regis
  * to Open Library first and still falls back to the article index, and vice versa,
  * so a misread reference costs one extra call rather than a missed match.
  */
-/** One attempt, no backoff: this registry is the understudy, not the lead. */
-const fallbackOpts = (opts: RegistryOptions): RegistryOptions => ({ ...opts, maxRetries: 0 });
-
 async function searchRegistries(
   entry: RefEntry,
   kind: RefKind,
@@ -26,29 +23,10 @@ async function searchRegistries(
   // a book index, so don't spend a call on it. Anything else gets both.
   const bookWorthTrying = booky || kind === "unknown";
   const article = async () => {
-    // Crossref carries the search load because OpenAlex meters it; OpenAlex is the
-    // fallback so a Crossref outage does not take the article path down with it.
-    let m: SearchMatch | null = null;
-    try {
-      m = await crossrefSearch(entry, opts);
-    } catch (e) {
-      if (!(e instanceof RegistryUnreachable)) throw e;
-      m = await openalexSearchScored(entry, fallbackOpts(opts));
-    }
-    // As a FALLBACK the metered search gets one attempt and no retry ladder. It is
-    // usually out of credit, Crossref has already answered or not, and Open Library
-    // is still to come; a retry here only makes the reader wait.
-    if (!m) m = await openalexSearchScored(entry, fallbackOpts(opts));
-    if (!m) return null;
-    // Crossref does not report retractions reliably. OpenAlex does, and asking it
-    // by DOI costs nothing, so a matched DOI is always checked for a retraction.
-    if (m.truth.source === "crossref" && m.truth.doi) {
-      try {
-        const confirmed = await openalexByDoi(m.truth.doi, opts);
-        if (confirmed?.retracted) m = { ...m, truth: { ...m.truth, retracted: true, id: confirmed.id } };
-      } catch { /* the retraction check is best-effort; a Crossref match still stands */ }
-    }
-    return { match: m, basis: "search" as MatchBasis };
+    // One call. Crossref's search response carries the Retraction Watch record, so
+    // the retraction check costs nothing extra.
+    const m = await crossrefSearch(entry, opts);
+    return m ? { match: m, basis: "search" as MatchBasis } : null;
   };
   const book = async () => {
     const m = await openLibrarySearch(entry, opts);
@@ -56,15 +34,26 @@ async function searchRegistries(
   };
   const noop = async () => null;
   const [first, second] = booky ? [book, article] : [article, bookWorthTrying ? book : noop];
+  let outage: RegistryUnreachable | null = null;
   try {
     const hit = await first();
     if (hit) return hit;
   } catch (e) {
-    // The preferred registry being down must not stop the other from answering.
+    // The preferred registry being down must not stop the other from answering,
+    // but it must not be forgotten either: "not found" and "could not look" are
+    // different answers, and only one of them is safe to report as not found.
     if (!(e instanceof RegistryUnreachable)) throw e;
-    return await second();
+    outage = e;
   }
-  return await second();
+  try {
+    const hit = await second();
+    if (hit) return hit;
+  } catch (e) {
+    if (!(e instanceof RegistryUnreachable)) throw e;
+    outage = outage ?? e;
+  }
+  if (outage) throw outage;
+  return null;
 }
 
 export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; notes: string[] } {
@@ -183,7 +172,7 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
     let basis: MatchBasis | null = null;
     let score: number | null = null;
     if (entry.doi) {
-      truth = await openalexByDoi(entry.doi, opts);
+      truth = await crossrefByDoi(entry.doi, opts);
       if (truth) basis = "doi";
       if (!truth) {
         const handle = await doiHandleExists(entry.doi, opts);
@@ -192,7 +181,7 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
             ...base,
             verdict: "FABRICATED_CANDIDATE",
             notes: [
-              `DOI ${entry.doi} is registered nowhere: 404 at OpenAlex AND at the doi.org handle registry`,
+              `DOI ${entry.doi} is registered nowhere: 404 at Crossref AND at the doi.org handle registry`,
             ],
             truth_source: null,
             truth_title: null,
@@ -205,7 +194,7 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
             return {
               ...base,
               verdict: "UNVERIFIED",
-              notes: [`DOI ${entry.doi} exists at doi.org but OpenAlex has no record; verify by hand`],
+              notes: [`DOI ${entry.doi} resolves at doi.org but Crossref has no record for it, which happens with DataCite and other agencies; verify by hand`],
               truth_source: null,
               truth_title: null,
             };
@@ -215,7 +204,7 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
           return {
             ...base,
             verdict: "REGISTRY_UNREACHABLE",
-            notes: ["OpenAlex 404 and doi.org unreachable; cannot distinguish fabrication from outage"],
+            notes: ["Crossref 404 and doi.org unreachable; cannot distinguish fabrication from outage"],
             truth_source: null,
             truth_title: null,
           };
@@ -308,7 +297,7 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
         verdict: "UNVERIFIED",
         notes: [
           REGISTRY_COVERS[base.kind]
-            ? "no match at Crossref, OpenAlex or Open Library, and not in your local library; verify by hand"
+            ? "no match at Crossref or Open Library, and not in your local library; verify by hand"
             : `this looks like a ${REF_KIND_LABEL[base.kind]}, which no registry indexes; not a sign of a bad reference, but check it by hand`,
         ],
         truth_source: null,

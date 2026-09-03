@@ -9,7 +9,7 @@
  *   refguard --locate "title or DOI"    # find a local (Zotero) PDF for a work
  *
  * Exit codes: 0 = all pass · 1 = blocking findings · 2 = cannot certify.
- * Set OPENALEX_MAILTO to join the OpenAlex polite pool.
+ * Set REFGUARD_MAILTO (or OPENALEX_MAILTO) to join Crossref's polite pool.
  */
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -163,12 +163,12 @@ async function main(): Promise<number> {
   }
   if (!zotero) console.error("note: no Zotero library found; auditing against registry only");
 
-  // OpenAlex throttles its search endpoint per IP, and a bibliography with no DOIs
-  // is nothing but search calls. --delay raises the gap between entries.
+  // Crossref's polite pool allows roughly three requests a second. --delay raises
+  // the gap between entries for a very large bibliography.
   const delayMs = Number(arg("delay") ?? 120);
   const results = await auditAll(entries, {
     local: zotero,
-    mailto: process.env.OPENALEX_MAILTO,
+    mailto: process.env.REFGUARD_MAILTO ?? process.env.OPENALEX_MAILTO,
     delayMs: Number.isFinite(delayMs) && delayMs >= 0 ? delayMs : 120,
   });
 

@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { familyNames, parseBib, parseTextRefs, referenceKind, referencesSection, REGISTRY_COVERS, trimDoiTail } from "../src/core/parse.ts";
 import { authorOverlap, journalMatch, titleSim } from "../src/core/match.ts";
 import { auditAll, auditEntry, compare } from "../src/core/audit.ts";
-import { openalexByDoi, RegistryUnreachable } from "../src/core/registry.ts";
+import { RegistryUnreachable } from "../src/core/registry.ts";
+import { crossrefByDoi } from "../src/core/crossref.ts";
 import { bookQuery } from "../src/core/openlibrary.ts";
 import { BLOCKING_VERDICTS } from "../src/core/types.ts";
 import type { LocalHit, RefEntry, Truth } from "../src/core/types.ts";
@@ -76,7 +77,7 @@ describe("matching", () => {
 // ---------- verdict logic ----------
 
 const truth: Truth = {
-  source: "openalex",
+  source: "crossref",
   title: "The Categorical Imperative: Securities Analysts and the Illegitimacy Discount",
   year: "1999",
   journal: "American Journal of Sociology",
@@ -124,7 +125,7 @@ describe("compare", () => {
 import { sanitizeSearchQuery } from "../src/core/registry.ts";
 
 describe("manuscript-audit regressions", () => {
-  test("search queries are sanitized: OpenAlex 400s on '?'", () => {
+  test("search queries are sanitized: a bare '?' breaks registry search", () => {
     expect(sanitizeSearchQuery("Expecting the Unexpected? How SWAT Officers Handle Surprises")).not.toContain("?");
   });
 
@@ -155,20 +156,17 @@ describe("manuscript-audit regressions", () => {
 
   test("search-based match with year-only gap downgrades to review (edition/online-first)", async () => {
     const work = {
-      display_name: "Case Study Research: Design and Methods",
-      publication_year: 1984,
-      primary_location: { source: { display_name: "" } },
-      doi: "",
-      authorships: [{ author: { display_name: "Robert K. Yin" } }],
-      is_retracted: false,
-      id: "W1",
+      DOI: undefined, title: ["Case Study Research: Design and Methods"],
+      author: [{ family: "Yin" }], issued: { "date-parts": [[1984]] },
+      "container-title": [""], type: "journal-article",
     };
     const r = await auditEntry(
       { key: "yin", title: "Case study research: Design and methods", authors: ["Yin"], year: "1994", journal: "", doi: "", raw: "" },
       {
         fetchFn: (async (input: any) => {
           const url = String(input);
-          if (url.includes("works?search")) return new Response(JSON.stringify({ results: [work] }), { status: 200 });
+          if (url.includes("api.crossref.org/works?")) return new Response(JSON.stringify({ message: { items: [work] } }), { status: 200 });
+          if (url.includes("openlibrary.org")) return new Response(JSON.stringify({ docs: [] }), { status: 200 });
           throw new TypeError("unexpected fetch " + url);
         }) as typeof fetch,
       },
@@ -181,15 +179,14 @@ describe("manuscript-audit regressions", () => {
     const r = await auditEntry(entry({ year: "1997" }), {
       fetchFn: (async (input: any) => {
         const url = String(input);
-        if (url.includes("works/doi:"))
+        if (url.includes("api.crossref.org/works/"))
           return new Response(
             JSON.stringify({
-              display_name: truth.title,
-              publication_year: 1999,
-              primary_location: { source: { display_name: truth.journal } },
-              doi: "https://doi.org/" + truth.doi,
-              authorships: [{ author: { display_name: "Ezra Zuckerman" } }],
-              is_retracted: false,
+              message: {
+                DOI: truth.doi, title: [truth.title], author: [{ family: "Zuckerman" }],
+                issued: { "date-parts": [[1999]] }, "container-title": [truth.journal],
+                type: "journal-article",
+              },
             }),
             { status: 200 },
           );
@@ -201,6 +198,33 @@ describe("manuscript-audit regressions", () => {
 });
 
 // ---------- fail-closed registry behavior (stubbed fetch, no network) ----------
+
+
+/** A Crossref work in the shape the API returns, for stubbing. */
+function xref(over: Record<string, unknown> = {}) {
+  return {
+    DOI: "10.1234/abcd",
+    title: ["A Real Paper"],
+    author: [{ family: "Doe" }],
+    issued: { "date-parts": [[2010]] },
+    "container-title": ["Some Journal"],
+    type: "journal-article",
+    ...over,
+  };
+}
+/** Serves one Crossref work for both the DOI and the search route. */
+function xrefStub(item: Record<string, unknown> = xref(), extra?: (u: string) => Response | null) {
+  return (async (input: any) => {
+    const u = String(input);
+    const e = extra?.(u);
+    if (e) return e;
+    if (u.includes("api.crossref.org/works?")) return new Response(JSON.stringify({ message: { items: [item] } }), { status: 200 });
+    if (u.includes("api.crossref.org/works/")) return new Response(JSON.stringify({ message: item }), { status: 200 });
+    if (u.includes("openlibrary.org")) return new Response(JSON.stringify({ docs: [] }), { status: 200 });
+    if (u.includes("doi.org/api/handles")) return new Response(JSON.stringify({ responseCode: 1 }), { status: 200 });
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+}
 
 function fetchStub(handler: (url: string) => Response | null): typeof fetch {
   return (async (input: any) => {
@@ -217,10 +241,10 @@ describe("auditEntry fail-closed", () => {
     expect(r.verdict).toBe("REGISTRY_UNREACHABLE");
   });
 
-  test("fabrication requires 404 at BOTH OpenAlex and doi.org", async () => {
+  test("fabrication requires 404 at BOTH Crossref and doi.org", async () => {
     const r = await auditEntry(entry({ doi: "10.9999/fake" }), {
       fetchFn: fetchStub((url) => {
-        if (url.includes("api.openalex.org/works/doi:")) return new Response("", { status: 404 });
+        if (url.includes("api.crossref.org/works/10")) return new Response("", { status: 404 });
         if (url.includes("doi.org/api/handles")) return new Response("", { status: 404 });
         return null;
       }),
@@ -228,24 +252,24 @@ describe("auditEntry fail-closed", () => {
     expect(r.verdict).toBe("FABRICATED_CANDIDATE");
   });
 
-  test("OpenAlex 404 with doi.org unreachable cannot certify", async () => {
+  test("a Crossref 404 with doi.org unreachable cannot certify", async () => {
     const r = await auditEntry(entry({ doi: "10.9999/fake" }), {
       fetchFn: fetchStub((url) => {
-        if (url.includes("api.openalex.org/works/doi:")) return new Response("", { status: 404 });
+        if (url.includes("api.crossref.org/works/10")) return new Response("", { status: 404 });
         return null; // doi.org down
       }),
     });
     expect(r.verdict).toBe("REGISTRY_UNREACHABLE");
   });
 
-  test("real DOI unknown to OpenAlex is UNVERIFIED, not fabricated", async () => {
+  test("a real DOI unknown to Crossref is UNVERIFIED, not fabricated", async () => {
     const r = await auditEntry(entry({ doi: "10.5555/dataset" }), {
       fetchFn: fetchStub((url) => {
-        if (url.includes("api.openalex.org/works/doi:")) return new Response("", { status: 404 });
+        if (url.includes("api.crossref.org/works/10")) return new Response("", { status: 404 });
         if (url.includes("doi.org/api/handles"))
           return new Response(JSON.stringify({ responseCode: 1 }), { status: 200 });
-        if (url.includes("api.openalex.org/works?search"))
-          return new Response(JSON.stringify({ results: [] }), { status: 200 });
+        if (url.includes("api.crossref.org/works?"))
+          return new Response(JSON.stringify({ message: { items: [] } }), { status: 200 });
         if (url.includes("openlibrary.org")) return new Response(JSON.stringify({ docs: [] }), { status: 200 });
         return null;
       }),
@@ -357,10 +381,10 @@ describe("rate limiting fails closed instead of hanging", () => {
     return { fetchFn, calls: () => calls };
   };
 
-  test("openalexByDoi gives up after the retry budget", async () => {
+  test("a DOI lookup gives up after the retry budget", async () => {
     const stub = alwaysRateLimited();
     await expect(
-      openalexByDoi("10.1234/abcd", { fetchFn: stub.fetchFn, maxRetries: 2, retryBaseMs: 1 }),
+      crossrefByDoi("10.1234/abcd", { fetchFn: stub.fetchFn, maxRetries: 2, retryBaseMs: 1 }),
     ).rejects.toThrow(RegistryUnreachable);
     expect(stub.calls()).toBe(3);   // the first attempt plus two retries, then it stops
   });
@@ -437,7 +461,7 @@ test("a hard throttle trips the breaker so the rest of the run fails fast", asyn
   // Count only the throttled registry: Open Library is a separate service and is
   // deliberately still asked, so it must not be counted against the breaker.
   const fetchFn = (async (url: string) => {
-    if (String(url).includes("api.openalex.org")) calls++;
+    if (String(url).includes("api.crossref.org")) calls++;
     return new Response("", { status: 429 });
   }) as unknown as typeof fetch;
   const entries: RefEntry[] = Array.from({ length: 8 }, (_, i) => ({
@@ -447,10 +471,10 @@ test("a hard throttle trips the breaker so the rest of the run fails fast", asyn
   const started = Date.now();
   const results = await auditAll(entries, { fetchFn, maxRetries: 1, retryBaseMs: 1 });
   expect(results.every((r) => r.verdict === "REGISTRY_UNREACHABLE")).toBe(true);
-  // The FIRST exhausted entry trips the breaker and the other seven are skipped
-  // without a further request. An exhausted daily budget stays exhausted, so
-  // spending a second entry's retry ladder to confirm it only makes people wait.
-  expect(calls).toBe(1);
+  // The first entry spends its ladder (one attempt plus one retry here) and trips
+  // the breaker; the other seven are skipped without a single further request. A
+  // budget that has run out stays out, so re-confirming it only makes people wait.
+  expect(calls).toBe(2);
   expect(Date.now() - started).toBeLessThan(2000);
 });
 
@@ -521,13 +545,7 @@ describe("the report says how a record was found", () => {
   });
 
   test("a DOI-anchored match records its basis and the matched record", async () => {
-    const truth = {
-      id: "https://openalex.org/W1", doi: "https://doi.org/10.1234/abcd",
-      display_name: "A Real Paper", publication_year: 2010, is_retracted: false,
-      primary_location: { source: { display_name: "Some Journal" } },
-      authorships: [{ author: { display_name: "Jane Doe" } }],
-    };
-    const fetchFn = (async () => new Response(JSON.stringify(truth), { status: 200 })) as unknown as typeof fetch;
+    const fetchFn = xrefStub();
     const entry: RefEntry = {
       key: "doe2010", title: "A Real Paper", authors: ["Doe"], year: "2010",
       journal: "Some Journal", doi: "10.1234/abcd", raw: "x",
@@ -537,17 +555,11 @@ describe("the report says how a record was found", () => {
     expect(r.truth_authors).toEqual(["Doe"]);
     expect(r.truth_year).toBe("2010");
     expect(r.truth_doi).toBe("10.1234/abcd");
-    expect(r.truth_id).toBe("https://openalex.org/W1");
+    expect(r.truth_id).toBe("https://doi.org/10.1234/abcd");
   });
 
   test("a search match records a confidence between 0 and 1", async () => {
-    const results = { results: [{
-      id: "https://openalex.org/W2", doi: null, display_name: "A Real Paper",
-      publication_year: 2010, is_retracted: false,
-      primary_location: { source: { display_name: "Some Journal" } },
-      authorships: [{ author: { display_name: "Jane Doe" } }],
-    }] };
-    const fetchFn = (async () => new Response(JSON.stringify(results), { status: 200 })) as unknown as typeof fetch;
+    const fetchFn = xrefStub(xref({ DOI: undefined }));
     const entry: RefEntry = {
       key: "doe2010", title: "A Real Paper", authors: ["Doe"], year: "2010",
       journal: "Some Journal", doi: "", raw: "x",
@@ -581,13 +593,12 @@ describe("reference kind is read from the reference string", () => {
 });
 
 describe("a generic title that matches the wrong work is not called an error", () => {
-  const wrongWork = { results: [{
-    id: "https://openalex.org/W9", doi: null, display_name: "Designing qualitative research",
-    publication_year: 1989, is_retracted: false,
-    primary_location: { source: { display_name: "Some Journal" } },
-    authorships: [{ author: { display_name: "Farnaz Ahmadi" } }, { author: { display_name: "Maryam Kaveh" } }],
-  }] };
-  const fetchFn = (async () => new Response(JSON.stringify(wrongWork), { status: 200 })) as unknown as typeof fetch;
+  const wrongWork = xref({
+    DOI: undefined, title: ["Designing qualitative research"],
+    author: [{ family: "Ahmadi" }, { family: "Kaveh" }], issued: { "date-parts": [[1989]] },
+    "container-title": [""],
+  });
+  const fetchFn = xrefStub(wrongWork);
 
   test("short title, no shared author, no DOI anchor -> AMBIGUOUS_MATCH", async () => {
     const entry: RefEntry = {
@@ -605,15 +616,10 @@ describe("a generic title that matches the wrong work is not called an error", (
     // Real drafts produced wrong matches on long distinctive titles too: "Why the
     // Lean Start-Up Changes Everything" matched a paper by different authors
     // entirely, so title length turned out to be the wrong discriminator.
-    const anchored = (async (url: string) =>
-      String(url).includes("works/doi:")
-        ? new Response(JSON.stringify({
-            id: "https://openalex.org/W9", doi: "https://doi.org/10.1234/abcd",
-            display_name: "Designing qualitative research", publication_year: 1989, is_retracted: false,
-            primary_location: { source: { display_name: "" } },
-            authorships: [{ author: { display_name: "Farnaz Ahmadi" } }],
-          }), { status: 200 })
-        : new Response("{}", { status: 200 })) as unknown as typeof fetch;
+    const anchored = xrefStub(xref({
+      title: ["Designing qualitative research"], author: [{ family: "Ahmadi" }],
+      issued: { "date-parts": [[1989]] }, "container-title": [""],
+    }));
     const entry: RefEntry = {
       key: "marshall1995", title: "Designing Qualitative Research",
       authors: ["Marshall", "Rossman"], year: "1995", journal: "", doi: "10.1234/abcd", raw: "x",
@@ -697,58 +703,48 @@ test("edition furniture is stripped before querying the book index", () => {
     .toBe("Case study research Design and methods Yin");
 });
 
-describe("Crossref carries the article search", () => {
-  const xrefItem = {
-    DOI: "10.2307/2392383",
-    title: ["Institutional Sources of Change in the Formal Structure of Organizations"],
-    author: [{ family: "Tolbert" }, { family: "Zucker" }],
-    issued: { "date-parts": [[1983, 3]] },
-    "container-title": ["Administrative Science Quarterly"],
-    type: "journal-article",
-  };
+describe("Crossref is the only article registry", () => {
   const entry: RefEntry = {
-    key: "tolbert1983", title: "Institutional Sources of Change in the Formal Structure of Organizations",
-    authors: ["Tolbert", "Zucker"], year: "1983", journal: "Administrative Science Quarterly", doi: "",
-    raw: "Tolbert, P. S., & Zucker, L. G. (1983). Institutional sources of change. Administrative Science Quarterly, 28(1), 22-39.",
+    key: "tolbert1983", title: "A Real Paper", authors: ["Doe"], year: "2010",
+    journal: "Some Journal", doi: "",
+    raw: "Doe, J. 2010. A real paper. Some Journal, 28(1), 22-39.",
   };
 
-  test("a DOI-less article is resolved through Crossref, not the metered search", async () => {
-    let openalexSearches = 0;
-    const fetchFn = (async (url: string) => {
-      const u = String(url);
-      if (u.includes("api.crossref.org")) return new Response(JSON.stringify({ message: { items: [xrefItem] } }), { status: 200 });
-      if (u.includes("api.openalex.org/works?search")) { openalexSearches++; return new Response(JSON.stringify({ results: [] }), { status: 200 }); }
-      if (u.includes("api.openalex.org/works/doi:")) return new Response(JSON.stringify({ id: "https://openalex.org/W1", display_name: xrefItem.title[0], publication_year: 1983, is_retracted: false, primary_location: { source: { display_name: "Administrative Science Quarterly" } }, authorships: [], doi: "10.2307/2392383" }), { status: 200 });
+  test("a DOI-less article is resolved in a single Crossref call", async () => {
+    let calls = 0;
+    const fetchFn = (async (u: any) => {
+      const url = String(u);
+      if (url.includes("api.crossref.org")) { calls++; return new Response(JSON.stringify({ message: { items: [xref()] } }), { status: 200 }); }
       return new Response("{}", { status: 200 });
     }) as unknown as typeof fetch;
     const r = await auditEntry(entry, { fetchFn });
     expect(r.verdict).toBe("CONSISTENT");
     expect(r.truth_source).toBe("crossref");
-    expect(r.truth_doi).toBe("10.2307/2392383");
-    expect(openalexSearches).toBe(0);   // the expensive endpoint is never touched
+    // One call. The retraction record rides along in the search response, so there
+    // is no second lookup to confirm it.
+    expect(calls).toBe(1);
   });
 
-  test("a Crossref match is still checked for a retraction, which Crossref does not report", async () => {
-    const fetchFn = (async (url: string) => {
-      const u = String(url);
-      if (u.includes("api.crossref.org")) return new Response(JSON.stringify({ message: { items: [xrefItem] } }), { status: 200 });
-      if (u.includes("api.openalex.org/works/doi:")) return new Response(JSON.stringify({ id: "https://openalex.org/W7", display_name: xrefItem.title[0], publication_year: 1983, is_retracted: true, primary_location: { source: { display_name: "Administrative Science Quarterly" } }, authorships: [], doi: "10.2307/2392383" }), { status: 200 });
-      return new Response("{}", { status: 200 });
-    }) as unknown as typeof fetch;
-    const r = await auditEntry(entry, { fetchFn });
+  test("a retraction is read from the search response itself", async () => {
+    const retracted = xref({ "updated-by": [{ type: "retraction", source: "retraction-watch", DOI: "10.1234/notice" }] });
+    const r = await auditEntry(entry, { fetchFn: xrefStub(retracted) });
     expect(r.verdict).toBe("RETRACTED");
   });
 
-  test("a Crossref outage falls through to OpenAlex rather than failing the entry", async () => {
-    const fetchFn = (async (url: string) => {
-      const u = String(url);
-      if (u.includes("api.crossref.org")) return new Response("", { status: 503 });
-      if (u.includes("api.openalex.org/works?search")) return new Response(JSON.stringify({ results: [{ id: "https://openalex.org/W2", doi: "https://doi.org/10.2307/2392383", display_name: xrefItem.title[0], publication_year: 1983, is_retracted: false, primary_location: { source: { display_name: "Administrative Science Quarterly" } }, authorships: [{ author: { display_name: "Pamela Tolbert" } }, { author: { display_name: "Lynne Zucker" } }] }] }), { status: 200 });
-      return new Response("{}", { status: 200 });
-    }) as unknown as typeof fetch;
-    const r = await auditEntry(entry, { fetchFn });
+  test("a correction notice is not a retraction", async () => {
+    const corrected = xref({ "updated-by": [{ type: "correction", source: "retraction-watch", DOI: "10.1234/notice" }] });
+    const r = await auditEntry(entry, { fetchFn: xrefStub(corrected) });
     expect(r.verdict).toBe("CONSISTENT");
-    expect(r.truth_source).toBe("openalex");
+  });
+
+  test("a Crossref outage fails closed rather than passing", async () => {
+    const down = (async (u: any) =>
+      String(u).includes("api.crossref.org")
+        ? new Response("", { status: 503 })
+        : new Response(JSON.stringify({ docs: [] }), { status: 200 })) as unknown as typeof fetch;
+    const r = await auditEntry(entry, { fetchFn: down });
+    expect(r.verdict).toBe("REGISTRY_UNREACHABLE");
+    expect(BLOCKING_VERDICTS).not.toContain(r.verdict);
   });
 });
 

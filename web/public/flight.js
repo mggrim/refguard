@@ -194,7 +194,7 @@
     ctx.save(); ctx.translate(cx,cy); ctx.scale(sc,sc);
     ctx.strokeStyle = C.rule; ctx.lineWidth = 1; ctx.strokeRect(.5,.5,w-1,h-1);
     ctx.fillStyle = C.ink3; ctx.font = mono(9); ctx.textBaseline='top';
-    ctx.fillText('OPENALEX · W2119270498 · REGISTRY RECORD', 22, 20);
+    ctx.fillText('CROSSREF · 10.5465/AMJ.2010.57318391 · REGISTRY RECORD', 22, 20);
     ctx.fillStyle = C.rule; ctx.fillRect(22, 40, w-44, 1);
     // field rows, each ticked as scene 2 progresses (after the card arrives)
     const truth = ['Building sustainable hybrid organizations: The case of commercial microfinance organizations','Battilana · Dorado','2010','Academy of Management Journal','10.5465/amj.2010.57318391'];

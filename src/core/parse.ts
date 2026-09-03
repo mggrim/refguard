@@ -298,7 +298,7 @@ export const REF_KIND_LABEL: Record<RefKind, string> = {
 /**
  * Registries index the scholarly literature, not everything scholars cite. A book,
  * a thesis, a consultancy report and a Forbes column are not failures of the check,
- * they are outside what OpenAlex covers, and telling an author that seven of their
+ * they are outside what any registry covers, and telling an author that seven of their
  * references "could be fabricated" when four of them are books is alarming and
  * wrong. Classify from the reference string, before any lookup.
  */

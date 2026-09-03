@@ -1,21 +1,21 @@
 # RefGuard
 
-Deterministic reference-integrity auditing for academic manuscripts. RefGuard checks every entry in a bibliography against the scholarly record and answers: **does this paper exist, do the fields actually belong to it, and has it been retracted?**
+Deterministic reference-integrity auditing for academic manuscripts. RefGuard checks every entry in a bibliography against the scholarly record (Crossref for articles, Open Library for books) and answers: **does this paper exist, do the fields actually belong to it, and has it been retracted?**
 
 No AI is involved in the audit — it is pure registry lookup and field comparison, so it cannot hallucinate. An optional agentic layer (the bundled Claude Code plugin) adds the complementary check: *does each cited paper actually say what the manuscript claims it says?*
 
 ## What it catches
 
-- **Fabricated references** — a DOI registered nowhere (checked at both OpenAlex and the doi.org handle registry)
+- **Fabricated references** — a DOI registered nowhere (checked at both Crossref and the doi.org handle registry)
 - **Field mixing** — one paper's title with another paper's authors, year, or journal (the most common silent error in inherited bibliographies)
 - **Wrong authors, years, venues, DOIs** — including near-twin journal confusions ("… Review" vs "… Journal")
-- **Retracted papers** — via OpenAlex retraction flags
+- **Retracted papers** — via the Retraction Watch database, which Crossref publishes
 - **Books** — checked against Open Library, which covers the monographs that predate DOI registration; a year gap on a multi-edition work is reported as an edition question, not an error
 - **Benign drift** — online-first vs print years, dropped subtitles (reported, not blocking)
 
 ## Fail-closed by design
 
-A network failure is `REGISTRY_UNREACHABLE` (exit 2, "cannot certify") — never a fabrication verdict and never a silent pass. `FABRICATED_CANDIDATE` requires positive evidence: a 404 at **both** OpenAlex and doi.org. Anything unrecognized routes to review, never to passing.
+A network failure is `REGISTRY_UNREACHABLE` (exit 2, "cannot certify") — never a fabrication verdict and never a silent pass. `FABRICATED_CANDIDATE` requires positive evidence: a 404 at **both** Crossref and doi.org. Anything unrecognized routes to review, never to passing.
 
 | Verdict | Meaning | Tier |
 |---|---|---|
@@ -38,7 +38,7 @@ bun src/cli.ts --docx manuscript.docx         # extracts the References section
 bun src/cli.ts --locate "title or DOI"        # find a local Zotero PDF for a work
 ```
 
-If a local [Zotero](https://www.zotero.org) library exists (`~/Zotero/zotero.sqlite`, or `--zotero <path>`), entries are also matched against it (read-only) and PDF paths are reported for downstream claim-checking. Set `OPENALEX_MAILTO=you@example.org` to join the OpenAlex polite pool.
+The CLI also consults a local Zotero library when one is present. If a local [Zotero](https://www.zotero.org) library exists (`~/Zotero/zotero.sqlite`, or `--zotero <path>`), entries are also matched against it (read-only) and PDF paths are reported for downstream claim-checking. Set `REFGUARD_MAILTO=you@example.org` to join Crossref's polite pool.
 
 ## Web app
 

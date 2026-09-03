@@ -1,7 +1,7 @@
 /**
  * Open Library — the book registry.
  *
- * OpenAlex and Crossref index the serial literature. The monographs a management
+ * Crossref indexes the serial literature. The monographs a management
  * bibliography leans on (Weick 1995, Glaser and Strauss 1967, Marshall and Rossman
  * 1989) mostly predate DOI registration, so neither registry can confirm them, and
  * an unconfirmed book looks identical to a fabricated one. Open Library covers them,
@@ -13,7 +13,7 @@
  */
 import type { RefEntry, Truth } from "./types.ts";
 import { authorOverlap, titleSim } from "./match.ts";
-import { RegistryUnreachable, SEARCH_ACCEPT, type RegistryOptions, type SearchMatch } from "./registry.ts";
+import { registryGet, SEARCH_ACCEPT, type RegistryOptions, type SearchMatch } from "./registry.ts";
 
 const ENDPOINT = "https://openlibrary.org/search.json";
 const FIELDS = "title,author_name,first_publish_year,edition_count,key";
@@ -71,26 +71,14 @@ export async function openLibrarySearch(
   entry: RefEntry,
   opts: RegistryOptions = {},
 ): Promise<SearchMatch | null> {
-  const f = opts.fetchFn ?? fetch;
   const query = bookQuery(entry);
   if (!query.trim()) return null;
   const url = `${ENDPOINT}?q=${encodeURIComponent(query)}&limit=5&fields=${FIELDS}`;
-  let resp: Response;
-  try {
-    resp = await f(url, {
-      headers: { "User-Agent": "RefGuard/1.0" },
-      signal: AbortSignal.timeout(opts.timeoutMs ?? 15000),
-    });
-  } catch (e) {
-    throw new RegistryUnreachable(`Open Library: ${String(e)}`);
-  }
-  if (resp.status === 404) return null;
-  if (!resp.ok) throw new RegistryUnreachable(`Open Library HTTP ${resp.status}`);
-  const data = (await resp.json()) as { docs?: OpenLibraryDoc[] };
+  const data = (await registryGet(url, opts)) as { docs?: OpenLibraryDoc[] } | null;
 
   let best: Truth | null = null;
   let bestScore = 0;
-  for (const doc of data.docs ?? []) {
+  for (const doc of data?.docs ?? []) {
     const t = docToTruth(doc);
     let score = entry.title ? titleSim(entry.title, t.title) : 0;
     const overlap = authorOverlap(entry.authors, t.authors);

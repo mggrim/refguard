@@ -26,7 +26,7 @@ export interface RefEntry {
 }
 
 export interface Truth {
-  source: "openalex" | "crossref" | "openlibrary" | "local";
+  source: "crossref" | "openlibrary" | "local";
   title: string;
   year: string;
   journal: string;

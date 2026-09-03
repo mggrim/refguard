@@ -14,7 +14,8 @@ const MAX_ENTRIES = 300;
 
 interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> };
-  OPENALEX_MAILTO?: string;
+  REFGUARD_MAILTO?: string;
+  OPENALEX_MAILTO?: string;   // legacy name, still honoured
 }
 
 function json(data: unknown, status = 200): Response {
@@ -51,7 +52,7 @@ export default {
         doi: String(e.doi ?? "").slice(0, 300),
         raw: String(e.raw ?? "").slice(0, 500),
       };
-      const result = await auditEntry(entry, { mailto: env.OPENALEX_MAILTO });
+      const result = await auditEntry(entry, { mailto: env.REFGUARD_MAILTO ?? env.OPENALEX_MAILTO });
       return json(result);
     }
 

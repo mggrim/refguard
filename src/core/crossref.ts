@@ -1,9 +1,10 @@
 /**
  * Crossref — the article registry.
  *
- * OpenAlex meters by credit: a title search costs ten times a DOI lookup and the
- * free allowance is about a hundred searches a day for a whole deployment. A
- * management bibliography carries almost no DOIs, so every entry is a search, and
+ * This is the only article registry the tool uses. OpenAlex was the original and
+ * was removed: it meters by credit, a title search cost ten times a DOI lookup, and
+ * the free allowance was about a hundred searches a day for an ENTIRE deployment.
+ * A management bibliography carries almost no DOIs, so every entry is a search, and
  * one person checking one manuscript exhausted the day for everyone.
  *
  * Crossref's polite pool advertises 3 requests a second with no daily cap, which is
@@ -11,15 +12,17 @@
  * reports a work `type` from the publisher's own deposit, which is better evidence
  * than guessing a reference's kind from its punctuation.
  *
- * It does NOT carry a retraction flag in a form worth trusting here, so a Crossref
- * match is confirmed against OpenAlex by DOI afterwards, which costs nothing.
+ * It also publishes the Retraction Watch database, which it acquired, so a
+ * retraction comes back inside the search response at no extra cost.
  */
 import type { RefEntry, Truth } from "./types.ts";
 import { authorOverlap, normDoi, titleSim } from "./match.ts";
-import { RegistryUnreachable, SEARCH_ACCEPT, type RegistryOptions, type SearchMatch } from "./registry.ts";
+import { registryGet, SEARCH_ACCEPT, type RegistryOptions, type SearchMatch } from "./registry.ts";
 
 const ENDPOINT = "https://api.crossref.org/works";
-const SELECT = "DOI,title,author,issued,container-title,type";
+// `updated-by` carries the Retraction Watch record, so a retraction comes back
+// inside the search response and costs no extra call.
+const SELECT = "DOI,title,author,issued,container-title,type,updated-by";
 
 interface CrossrefItem {
   DOI?: string;
@@ -28,6 +31,16 @@ interface CrossrefItem {
   issued?: { "date-parts"?: number[][] };
   "container-title"?: string[];
   type?: string;
+  "updated-by"?: Array<{ type?: string; source?: string; DOI?: string }>;
+}
+
+/**
+ * Crossref publishes the Retraction Watch database it acquired, as `updated-by`
+ * entries on the retracted work. A "correction" is not a retraction, so match the
+ * type exactly rather than treating any update as one.
+ */
+export function isRetracted(item: { "updated-by"?: Array<{ type?: string }> }): boolean {
+  return (item["updated-by"] ?? []).some((u) => u.type === "retraction");
 }
 
 /** Crossref's own work type, which beats guessing from the reference string. */
@@ -50,9 +63,7 @@ function itemToTruth(item: CrossrefItem): Truth {
         return parts[parts.length - 1] ?? "";
       })
       .filter(Boolean),
-    // Crossref exposes retractions only through linked update records, which are
-    // patchy. OpenAlex is asked by DOI afterwards, and that lookup is free.
-    retracted: false,
+    retracted: isRetracted(item),
     id: item.DOI ? `https://doi.org/${item.DOI}` : undefined,
     type: item.type,
   };
@@ -67,28 +78,15 @@ export async function crossrefSearch(
   entry: RefEntry,
   opts: RegistryOptions = {},
 ): Promise<SearchMatch | null> {
-  const f = opts.fetchFn ?? fetch;
   const query = (entry.raw && entry.raw.length > entry.title.length ? entry.raw : entry.title).slice(0, 400);
   if (!query.trim()) return null;
   const url = `${ENDPOINT}?query.bibliographic=${encodeURIComponent(query)}&rows=5&select=${SELECT}` +
     (opts.mailto ? `&mailto=${encodeURIComponent(opts.mailto)}` : "");
-  let resp: Response;
-  try {
-    resp = await f(url, {
-      headers: { "User-Agent": "RefGuard/1.0 (https://github.com/mggrim/refguard)" },
-      signal: AbortSignal.timeout(opts.timeoutMs ?? 15000),
-    });
-  } catch (e) {
-    throw new RegistryUnreachable(`Crossref: ${String(e)}`);
-  }
-  if (resp.status === 404) return null;
-  if (resp.status === 429) throw new RegistryUnreachable("Crossref rate limited (HTTP 429)");
-  if (!resp.ok) throw new RegistryUnreachable(`Crossref HTTP ${resp.status}`);
-  const data = (await resp.json()) as { message?: { items?: CrossrefItem[] } };
+  const data = (await registryGet(url, opts)) as { message?: { items?: CrossrefItem[] } } | null;
 
   let best: Truth | null = null;
   let bestScore = 0;
-  for (const item of data.message?.items ?? []) {
+  for (const item of data?.message?.items ?? []) {
     const t = itemToTruth(item);
     let score = entry.title ? titleSim(entry.title, t.title) : 0;
     const overlap = authorOverlap(entry.authors, t.authors);
@@ -100,4 +98,12 @@ export async function crossrefSearch(
     }
   }
   return bestScore >= SEARCH_ACCEPT && best ? { truth: best, score: Math.min(1, bestScore) } : null;
+}
+
+/** Direct DOI lookup. Returns null for a DOI Crossref does not hold. */
+export async function crossrefByDoi(doi: string, opts: RegistryOptions = {}): Promise<Truth | null> {
+  const url = `${ENDPOINT}/${encodeURIComponent(doi)}` + (opts.mailto ? `?mailto=${encodeURIComponent(opts.mailto)}` : "");
+  const data = (await registryGet(url, opts)) as { message?: CrossrefItem } | null;
+  if (!data) return null;
+  return data.message ? itemToTruth(data.message) : null;
 }

@@ -1,6 +1,6 @@
 ---
 name: refguard
-description: Citation and reference verification for academic manuscripts. Deterministic bibliography audit against OpenAlex (fabricated DOIs, mixed-up fields, wrong authors/years/venues, retracted papers, fail-closed verdicts) plus independent claim-vs-source verification via fresh-context agents. USE WHEN verify references, check citations, audit bibliography, did I hallucinate citations, fake references, are these papers real, retraction check, does the cited paper actually say that, citation-context check, pre-submission citation gate.
+description: Citation and reference verification for academic manuscripts. Deterministic bibliography audit against Crossref and Open Library (fabricated DOIs, mixed-up fields, wrong authors/years/venues, retracted papers, fail-closed verdicts) plus independent claim-vs-source verification via fresh-context agents. USE WHEN verify references, check citations, audit bibliography, did I hallucinate citations, fake references, are these papers real, retraction check, does the cited paper actually say that, citation-context check, pre-submission citation gate.
 ---
 
 # RefGuard
@@ -28,10 +28,10 @@ Independence contract: verifier agents NEVER receive the manuscript, sibling cla
 
 ## Gotchas
 
-- OpenAlex's year is often the online-first year; ±1 is BENIGN_DRIFT by design, only ±2 blocks.
-- A DOI missing from OpenAlex is not fabrication by itself (DataCite, books); the audit cross-checks doi.org handles before saying FABRICATED_CANDIDATE.
+- A registry's year is often the online-first year; ±1 is BENIGN_DRIFT by design, only ±2 blocks. A book's edition count settles the rest.
+- A DOI missing from Crossref is not fabrication by itself (DataCite and other agencies register DOIs too); the audit cross-checks doi.org handles before saying FABRICATED_CANDIDATE.
 - WRONG_PAPER and UNSUPPORTED overlap at the boundary; both are blocking, so verifier disagreement between them is harmless.
-- Set `OPENALEX_MAILTO` in the environment to join the OpenAlex polite pool.
+- Set `REFGUARD_MAILTO` in the environment to join Crossref's polite pool.
 
 ## Attribution
 

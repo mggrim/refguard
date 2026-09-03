@@ -1,7 +1,46 @@
 import type { AuditResult, LocalHit, LocalLibrary, MatchBasis, RefEntry, Truth, Verdict } from "./types.ts";
+import type { RefKind } from "./parse.ts";
+import type { SearchMatch } from "./registry.ts";
 import { REF_KIND_LABEL, REGISTRY_COVERS, referenceKind } from "./parse.ts";
+import { openLibrarySearch } from "./openlibrary.ts";
 import { authorOverlap, GENERIC_TITLE_TOKENS, journalMatch, titleDistinctiveness, titleSim } from "./match.ts";
 import { doiHandleExists, newBreaker, openalexByDoi, openalexSearchScored, RegistryUnreachable, type RegistryOptions } from "./registry.ts";
+
+/**
+ * Which registry to ask, and in what order. The kind is read from the reference
+ * string, so it can be wrong; neither registry is therefore exclusive. A book goes
+ * to Open Library first and still falls back to the article index, and vice versa,
+ * so a misread reference costs one extra call rather than a missed match.
+ */
+async function searchRegistries(
+  entry: RefEntry,
+  kind: RefKind,
+  opts: RegistryOptions,
+): Promise<{ match: SearchMatch; basis: MatchBasis } | null> {
+  const booky = kind === "book" || kind === "chapter";
+  // A reference the string clearly shows to be a journal article has no business in
+  // a book index, so don't spend a call on it. Anything else gets both.
+  const bookWorthTrying = booky || kind === "unknown";
+  const article = async () => {
+    const m = await openalexSearchScored(entry, opts);
+    return m ? { match: m, basis: "search" as MatchBasis } : null;
+  };
+  const book = async () => {
+    const m = await openLibrarySearch(entry, opts);
+    return m ? { match: m, basis: "book" as MatchBasis } : null;
+  };
+  const noop = async () => null;
+  const [first, second] = booky ? [book, article] : [article, bookWorthTrying ? book : noop];
+  try {
+    const hit = await first();
+    if (hit) return hit;
+  } catch (e) {
+    // The preferred registry being down must not stop the other from answering.
+    if (!(e instanceof RegistryUnreachable)) throw e;
+    return await second();
+  }
+  return await second();
+}
 
 export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; notes: string[] } {
   const notes: string[] = [];
@@ -128,8 +167,8 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
           };
         }
         if (handle === true) {
-          const m = await openalexSearchScored(entry, opts);
-          if (m) { truth = m.truth; basis = "search"; score = m.score; }
+          const m = await searchRegistries(entry, base.kind, opts);
+          if (m) { truth = m.match.truth; basis = m.basis; score = m.match.score; }
           if (!truth) {
             return {
               ...base,
@@ -157,8 +196,8 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
     let registryDown = false;
     if (!truth) {
       try {
-        const m = await openalexSearchScored(entry, opts);
-        if (m) { truth = m.truth; basis = "search"; score = m.score; }
+        const m = await searchRegistries(entry, base.kind, opts);
+        if (m) { truth = m.match.truth; basis = m.basis; score = m.match.score; }
       } catch (e) {
         if (!(e instanceof RegistryUnreachable) || !local) throw e;
         registryDown = true;
@@ -245,6 +284,29 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
       };
     }
     const c = compare(entry, truth);
+    // A book with several printings has several correct years. Open Library reports
+    // the first printing plus an edition count, so a year gap on a multi-edition work
+    // is an edition, not an error — this is the complaint that started the project.
+    if (truth.source === "openlibrary" && (truth.editions ?? 1) > 1 && c.verdict === "INCONSISTENT") {
+      // Open Library often lists only the first author on a work record, so a
+      // partial author overlap is a gap in its data, not a disagreement.
+      const editionOnly =
+        c.notes.length > 0 &&
+        c.notes.every((n) => n.startsWith("year off by") || n.startsWith("partial author overlap"));
+      if (editionOnly) {
+        return {
+          ...withTruth(truth, "book", score),
+          verdict: "BENIGN_DRIFT",
+          notes: [
+            // Open Library's first_publish_year is the earliest printing IT holds,
+            // which is not always the true first edition, so do not assert which
+            // printing the author cited — only that several exist.
+            `Open Library records ${truth.editions} editions of this work; edition years differ, so confirm which printing you cited`,
+            ...c.notes,
+          ],
+        };
+      }
+    }
     // A search-based match (no DOI anchor) that differs ONLY in year is more
     // likely a different edition or an online-first record of the same work
     // than a manuscript error — books and slow journals hit this constantly.

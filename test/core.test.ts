@@ -3,6 +3,7 @@ import { familyNames, parseBib, parseTextRefs, referenceKind, referencesSection,
 import { authorOverlap, journalMatch, titleSim } from "../src/core/match.ts";
 import { auditAll, auditEntry, compare } from "../src/core/audit.ts";
 import { openalexByDoi, RegistryUnreachable } from "../src/core/registry.ts";
+import { bookQuery } from "../src/core/openlibrary.ts";
 import { BLOCKING_VERDICTS } from "../src/core/types.ts";
 import type { LocalHit, RefEntry, Truth } from "../src/core/types.ts";
 
@@ -245,6 +246,7 @@ describe("auditEntry fail-closed", () => {
           return new Response(JSON.stringify({ responseCode: 1 }), { status: 200 });
         if (url.includes("api.openalex.org/works?search"))
           return new Response(JSON.stringify({ results: [] }), { status: 200 });
+        if (url.includes("openlibrary.org")) return new Response(JSON.stringify({ docs: [] }), { status: 200 });
         return null;
       }),
     });
@@ -432,7 +434,12 @@ describe("a registry outage still uses the local library", () => {
 
 test("a hard throttle trips the breaker so the rest of the run fails fast", async () => {
   let calls = 0;
-  const fetchFn = (async () => { calls++; return new Response("", { status: 429 }); }) as unknown as typeof fetch;
+  // Count only the throttled registry: Open Library is a separate service and is
+  // deliberately still asked, so it must not be counted against the breaker.
+  const fetchFn = (async (url: string) => {
+    if (String(url).includes("api.openalex.org")) calls++;
+    return new Response("", { status: 429 });
+  }) as unknown as typeof fetch;
   const entries: RefEntry[] = Array.from({ length: 8 }, (_, i) => ({
     key: `e${i}`, title: `Paper number ${i}`, authors: ["Doe"], year: "2020",
     journal: "Journal", doi: "", raw: "x",
@@ -600,4 +607,63 @@ describe("a generic title that matches the wrong work is not called an error", (
     const r = await auditEntry(entry, { fetchFn });
     expect(r.verdict).not.toBe("AMBIGUOUS_MATCH");
   });
+});
+
+describe("books route to Open Library", () => {
+  const olDocs = (docs: unknown[]) => (async (url: string) =>
+    String(url).includes("openlibrary.org")
+      ? new Response(JSON.stringify({ docs }), { status: 200 })
+      : new Response(JSON.stringify({ results: [] }), { status: 200 })) as unknown as typeof fetch;
+
+  const weick: RefEntry = {
+    key: "weick1995", title: "Sensemaking in organizations", authors: ["Weick"], year: "1995",
+    journal: "", doi: "",
+    raw: "Weick, K. E. 1995. Sensemaking in organizations (Vol. 3). Thousand Oaks, CA: Sage.",
+  };
+
+  test("a book the article index cannot confirm is found in Open Library", async () => {
+    const r = await auditEntry(weick, {
+      fetchFn: olDocs([{ title: "Sensemaking in organizations", author_name: ["Karl E. Weick"], first_publish_year: 1995, edition_count: 1, key: "/works/OL1W" }]),
+    });
+    expect(r.verdict).toBe("CONSISTENT");
+    expect(r.match_basis).toBe("book");
+    expect(r.truth_id).toBe("https://openlibrary.org/works/OL1W");
+  });
+
+  test("a year gap on a multi-edition work is an edition, not an error", async () => {
+    // Cited as the 2009 printing; Open Library records the 1967 first edition.
+    const grounded: RefEntry = {
+      key: "glaser2009", title: "The discovery of grounded theory", authors: ["Glaser", "Strauss"],
+      year: "2009", journal: "", doi: "",
+      raw: "Glaser, B. G., & Strauss, A. L. 2009. The discovery of grounded theory. New Brunswick, NJ: Aldine.",
+    };
+    const r = await auditEntry(grounded, {
+      fetchFn: olDocs([{ title: "The discovery of grounded theory", author_name: ["Barney G. Glaser", "Anselm L. Strauss"], first_publish_year: 1967, edition_count: 4, key: "/works/OL2W" }]),
+    });
+    expect(r.verdict).toBe("BENIGN_DRIFT");
+    expect(r.notes[0]).toContain("4 editions");
+    expect(BLOCKING_VERDICTS).not.toContain(r.verdict);
+  });
+
+  test("a clear journal article is never sent to the book index", async () => {
+    let hitBooks = false;
+    const fetchFn = (async (url: string) => {
+      if (String(url).includes("openlibrary.org")) hitBooks = true;
+      return new Response(JSON.stringify({ results: [] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await auditEntry({
+      key: "t1983", title: "Institutional sources of change", authors: ["Tolbert"], year: "1983",
+      journal: "Administrative Science Quarterly", doi: "",
+      raw: "Tolbert, P. S. 1983. Institutional sources of change. Administrative Science Quarterly, 28(1), 22-39.",
+    }, { fetchFn });
+    expect(hitBooks).toBe(false);
+  });
+});
+
+test("edition furniture is stripped before querying the book index", () => {
+  // Open Library returned ZERO documents for the title with "(Vol. 3)" left in.
+  expect(bookQuery({ key: "w", title: "Sensemaking in organizations (Vol. 3)", authors: ["Weick"], year: "1995", journal: "", doi: "", raw: "x" }))
+    .toBe("Sensemaking in organizations Weick");
+  expect(bookQuery({ key: "r", title: "Case study research: Design and methods, 3rd edition", authors: ["Yin"], year: "2003", journal: "", doi: "", raw: "x" }))
+    .toBe("Case study research Design and methods Yin");
 });

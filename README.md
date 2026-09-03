@@ -10,6 +10,7 @@ No AI is involved in the audit — it is pure registry lookup and field comparis
 - **Field mixing** — one paper's title with another paper's authors, year, or journal (the most common silent error in inherited bibliographies)
 - **Wrong authors, years, venues, DOIs** — including near-twin journal confusions ("… Review" vs "… Journal")
 - **Retracted papers** — via OpenAlex retraction flags
+- **Books** — checked against Open Library, which covers the monographs that predate DOI registration; a year gap on a multi-edition work is reported as an edition question, not an error
 - **Benign drift** — online-first vs print years, dropped subtitles (reported, not blocking)
 
 ## Fail-closed by design

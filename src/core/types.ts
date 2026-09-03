@@ -26,7 +26,7 @@ export interface RefEntry {
 }
 
 export interface Truth {
-  source: "openalex" | "local";
+  source: "openalex" | "openlibrary" | "local";
   title: string;
   year: string;
   journal: string;
@@ -34,6 +34,9 @@ export interface Truth {
   authors: string[];
   retracted: boolean;
   id?: string;
+  /** Open Library only: how many printings this work has. A multi-edition work has
+   * several correct years, which is why an edition gap is not a mismatch. */
+  editions?: number;
 }
 
 export interface AuditResult {
@@ -67,11 +70,12 @@ export interface AuditResult {
 
 import type { RefKind } from "./parse.ts";
 
-export type MatchBasis = "doi" | "search" | "local";
+export type MatchBasis = "doi" | "search" | "book" | "local";
 
 export const MATCH_BASIS_LABEL: Record<MatchBasis, string> = {
   doi: "matched by DOI",
   search: "matched by title search",
+  book: "matched in Open Library",
   local: "matched in your local library",
 };
 

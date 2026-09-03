@@ -6,6 +6,7 @@
   const $ = (id) => document.getElementById(id);
   const TIER = { FABRICATED_CANDIDATE:'b', INCONSISTENT:'b', RETRACTED:'b', BENIGN_DRIFT:'r', UNVERIFIED:'r', REGISTRY_UNREACHABLE:'r', CONSISTENT:'p' };
   const LABEL = { FABRICATED_CANDIDATE:'Fabricated candidate', INCONSISTENT:'Inconsistent', RETRACTED:'Retracted', BENIGN_DRIFT:'Benign drift', UNVERIFIED:'Unverified', REGISTRY_UNREACHABLE:'Registry unreachable', CONSISTENT:'Consistent' };
+  const BASIS = { doi: 'Matched by DOI', search: 'Matched by title search', local: 'Matched in your local library' };
   const tier = (v) => TIER[v] ?? 'r';          // fail closed: an unknown verdict goes to review
   const form = $('audit'), input = $('input'), go = $('go'), status = $('status'), bar = $('bar'), empty = $('empty'), cert = $('cert');
   const groups = { b:$('g-b'), r:$('g-r'), p:$('g-p') };
@@ -69,11 +70,31 @@
     const notes = (r.notes || []).filter(Boolean);
     const row = document.createElement('div');
     row.className = 'row';
+    // Show HOW the record was found and WHAT it is. A DOI anchor and a title guess
+    // used to look identical here, so a reader could not tell a wrong reference
+    // from a wrong match.
+    const how = r.match_basis ? (BASIS[r.match_basis] ?? r.match_basis) : '';
+    const conf = (r.match_confidence != null && r.match_basis === 'search')
+      ? ` · confidence ${r.match_confidence.toFixed(2)}` : '';
+    const who = [
+      r.truth_authors && r.truth_authors.length
+        ? esc(r.truth_authors.slice(0, 4).join(', ')) + (r.truth_authors.length > 4 ? ' et al.' : '')
+        : '',
+      r.truth_year ? esc(r.truth_year) : '',
+    ].filter(Boolean).join(', ');
+    const ident = r.truth_doi
+      ? `<a href="https://doi.org/${encodeURIComponent(r.truth_doi)}" target="_blank" rel="noopener">${esc(r.truth_doi)}</a>`
+      : (r.truth_id ? `<a href="${esc(r.truth_id)}" target="_blank" rel="noopener">registry record</a>` : '');
     row.innerHTML =
       `<div><span class="stamp ${k}">${esc(LABEL[r.verdict] ?? r.verdict)}</span></div>` +
       `<div><div class="key">${esc(r.key)}</div>` +
       (r.title ? `<div class="title">${esc(r.title)}${r.year ? `<i>${esc(r.year)}</i>` : ''}</div>` : '') +
-      (r.truth_title && r.truth_title !== r.title ? `<div class="n"><span class="lbl">Registry</span>${esc(r.truth_title)}</div>` : '') +
+      (r.truth_title
+        ? `<div class="matched"><span class="how">${esc(how)}${esc(conf)}</span>` +
+          `<span class="rec">${esc(r.truth_title)}</span>` +
+          (who || ident ? `<span class="who">${who}${who && ident ? ' · ' : ''}${ident}</span>` : '') +
+          `</div>`
+        : '') +
       (notes.length ? `<div class="n"><span class="lbl">Notes</span>${esc(notes.join(' · '))}</div>` : '') +
       `</div>`;
     g.querySelector('.rows').appendChild(row);

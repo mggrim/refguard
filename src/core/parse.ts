@@ -211,7 +211,11 @@ export function parseTextRefs(text: string): RefEntry[] {
  * suffix so two entries never collide in the results.
  */
 function citationKey(author: string | undefined, year: string, idx: number, used: Set<string>): string {
-  const stem = author ? author.toLowerCase().replace(/[^a-z]/g, "") : "";
+  // Fold accents before stripping: a bare [^a-z] strip DELETED accented letters,
+  // so "Tötterman" keyed as "ttterman" and no longer matched the author's own file.
+  const stem = author
+    ? author.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z]/g, "")
+    : "";
   let key = stem ? `${stem}${year}` : `ref${idx + 1}`;
   if (used.has(key)) {
     let n = 1;

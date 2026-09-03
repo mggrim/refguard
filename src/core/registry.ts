@@ -105,7 +105,19 @@ export async function openalexByDoi(doi: string, opts: RegistryOptions = {}): Pr
   return w ? workToTruth(w) : null;
 }
 
-export async function openalexSearch(entry: RefEntry, opts: RegistryOptions = {}): Promise<Truth | null> {
+export interface SearchMatch {
+  truth: Truth;
+  /** Combined title/author/year score of the accepted candidate, 0-1. */
+  score: number;
+}
+
+/** Below this the candidate is not trusted enough to be called a match. */
+export const SEARCH_ACCEPT = 0.6;
+
+export async function openalexSearchScored(
+  entry: RefEntry,
+  opts: RegistryOptions = {},
+): Promise<SearchMatch | null> {
   // OpenAlex's search endpoint returns HTTP 400 on queries containing '?' (even encoded)
   const q = sanitizeSearchQuery(entry.title || entry.raw.slice(0, 200));
   const data: any = await openalexGet(
@@ -126,7 +138,13 @@ export async function openalexSearch(entry: RefEntry, opts: RegistryOptions = {}
       best = t;
     }
   }
-  return bestScore >= 0.6 ? best : null;
+  // The year bonus can push a perfect match above 1; report a clean 0-1 scale.
+  return bestScore >= SEARCH_ACCEPT && best ? { truth: best, score: Math.min(1, bestScore) } : null;
+}
+
+/** Back-compat wrapper: the matched record without its score. */
+export async function openalexSearch(entry: RefEntry, opts: RegistryOptions = {}): Promise<Truth | null> {
+  return (await openalexSearchScored(entry, opts))?.truth ?? null;
 }
 
 /** Second opinion on a DOI's existence, so one registry's gap ≠ fabrication. */

@@ -504,3 +504,49 @@ test("a compound surname matches its short form", () => {
   expect(authorOverlap(["O’Mahony"], ["O'Mahony"])).toBe(1);
   expect(authorOverlap(["Brown"], ["Crilly"])).toBe(0);
 });
+
+describe("the report says how a record was found", () => {
+  test("an accented surname keeps its letters in the key", () => {
+    // "Tötterman" keyed as "ttterman" because a bare [^a-z] strip deleted the umlaut.
+    const [ref] = parseTextRefs("Tötterman, H., & Sten, J. 2005. Start-ups: Business incubation and social capital. International Small Business Journal, 23(5): 487-511.");
+    expect(ref?.key).toBe("totterman2005");
+  });
+
+  test("a DOI-anchored match records its basis and the matched record", async () => {
+    const truth = {
+      id: "https://openalex.org/W1", doi: "https://doi.org/10.1234/abcd",
+      display_name: "A Real Paper", publication_year: 2010, is_retracted: false,
+      primary_location: { source: { display_name: "Some Journal" } },
+      authorships: [{ author: { display_name: "Jane Doe" } }],
+    };
+    const fetchFn = (async () => new Response(JSON.stringify(truth), { status: 200 })) as unknown as typeof fetch;
+    const entry: RefEntry = {
+      key: "doe2010", title: "A Real Paper", authors: ["Doe"], year: "2010",
+      journal: "Some Journal", doi: "10.1234/abcd", raw: "x",
+    };
+    const r = await auditEntry(entry, { fetchFn });
+    expect(r.match_basis).toBe("doi");
+    expect(r.truth_authors).toEqual(["Doe"]);
+    expect(r.truth_year).toBe("2010");
+    expect(r.truth_doi).toBe("10.1234/abcd");
+    expect(r.truth_id).toBe("https://openalex.org/W1");
+  });
+
+  test("a search match records a confidence between 0 and 1", async () => {
+    const results = { results: [{
+      id: "https://openalex.org/W2", doi: null, display_name: "A Real Paper",
+      publication_year: 2010, is_retracted: false,
+      primary_location: { source: { display_name: "Some Journal" } },
+      authorships: [{ author: { display_name: "Jane Doe" } }],
+    }] };
+    const fetchFn = (async () => new Response(JSON.stringify(results), { status: 200 })) as unknown as typeof fetch;
+    const entry: RefEntry = {
+      key: "doe2010", title: "A Real Paper", authors: ["Doe"], year: "2010",
+      journal: "Some Journal", doi: "", raw: "x",
+    };
+    const r = await auditEntry(entry, { fetchFn });
+    expect(r.match_basis).toBe("search");
+    expect(r.match_confidence).toBeGreaterThan(0.6);
+    expect(r.match_confidence).toBeLessThanOrEqual(1);
+  });
+});

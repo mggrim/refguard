@@ -1,6 +1,6 @@
-import type { AuditResult, LocalHit, LocalLibrary, RefEntry, Truth, Verdict } from "./types.ts";
+import type { AuditResult, LocalHit, LocalLibrary, MatchBasis, RefEntry, Truth, Verdict } from "./types.ts";
 import { authorOverlap, journalMatch, titleSim } from "./match.ts";
-import { doiHandleExists, newBreaker, openalexByDoi, openalexSearch, RegistryUnreachable, type RegistryOptions } from "./registry.ts";
+import { doiHandleExists, newBreaker, openalexByDoi, openalexSearchScored, RegistryUnreachable, type RegistryOptions } from "./registry.ts";
 
 export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; notes: string[] } {
   const notes: string[] = [];
@@ -82,13 +82,36 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
     key: entry.key,
     title: entry.title,
     year: entry.year,
+    truth_source: null as string | null,
+    truth_title: null as string | null,
+    match_basis: null as MatchBasis | null,
+    match_confidence: null as number | null,
+    truth_authors: null as string[] | null,
+    truth_year: null as string | null,
+    truth_doi: null as string | null,
+    truth_id: null as string | null,
     local_id: local?.id ?? null,
     local_pdf: local?.pdf ?? null,
   };
+  /** Fill the matched record's identity so a wrong match is visible in the report. */
+  const withTruth = (t: Truth, basis: MatchBasis, confidence: number | null) => ({
+    ...base,
+    match_basis: basis,
+    match_confidence: confidence,
+    truth_authors: t.authors.length ? t.authors : null,
+    truth_year: t.year || null,
+    truth_doi: t.doi || null,
+    truth_id: t.id ?? null,
+    truth_source: t.source,
+    truth_title: t.title,
+  });
   try {
     let truth: Truth | null = null;
+    let basis: MatchBasis | null = null;
+    let score: number | null = null;
     if (entry.doi) {
       truth = await openalexByDoi(entry.doi, opts);
+      if (truth) basis = "doi";
       if (!truth) {
         const handle = await doiHandleExists(entry.doi, opts);
         if (handle === false) {
@@ -103,7 +126,8 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
           };
         }
         if (handle === true) {
-          truth = await openalexSearch(entry, opts);
+          const m = await openalexSearchScored(entry, opts);
+          if (m) { truth = m.truth; basis = "search"; score = m.score; }
           if (!truth) {
             return {
               ...base,
@@ -131,7 +155,8 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
     let registryDown = false;
     if (!truth) {
       try {
-        truth = await openalexSearch(entry, opts);
+        const m = await openalexSearchScored(entry, opts);
+        if (m) { truth = m.truth; basis = "search"; score = m.score; }
       } catch (e) {
         if (!(e instanceof RegistryUnreachable) || !local) throw e;
         registryDown = true;
@@ -160,7 +185,8 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
         c.notes.every((n) => n.startsWith("year off by") || n.startsWith("title drift"));
       const contradicted = c.verdict === "INCONSISTENT" && !yearOnly;
       return {
-        ...base,
+        ...withTruth({ source: "local", title: local.title, year: local.year, journal: local.journal,
+                       doi: local.doi, authors: local.authors, retracted: false }, "local", null),
         verdict: contradicted ? "INCONSISTENT" : yearOnly ? "BENIGN_DRIFT" : "REGISTRY_UNREACHABLE",
         notes: [
           ...c.notes,
@@ -194,14 +220,13 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
         retracted: false,
       });
       return {
-        ...base,
+        ...withTruth({ source: "local", title: local.title, year: local.year, journal: local.journal,
+                       doi: local.doi, authors: local.authors, retracted: false }, "local", null),
         verdict: c.verdict,
         notes: [
           ...c.notes,
           "registry had no match; verified against local library metadata only (no retraction check)",
         ],
-        truth_source: "local",
-        truth_title: local.title,
       };
     }
     if (!truth) {
@@ -229,17 +254,15 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
       c.notes.every((n) => n.startsWith("year off by") || n.startsWith("title drift"))
     ) {
       return {
-        ...base,
+        ...withTruth(truth, basis ?? "search", score),
         verdict: "BENIGN_DRIFT",
         notes: [
           ...c.notes,
           "matched by title/author search, not DOI — year gap likely a different edition or online-first record; confirm the year by hand",
         ],
-        truth_source: truth.source,
-        truth_title: truth.title,
       };
     }
-    return { ...base, verdict: c.verdict, notes: c.notes, truth_source: truth.source, truth_title: truth.title };
+    return { ...withTruth(truth, basis ?? "search", score), verdict: c.verdict, notes: c.notes };
   } catch (e) {
     if (e instanceof RegistryUnreachable) {
       return {

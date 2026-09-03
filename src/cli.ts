@@ -17,6 +17,7 @@ import {
   auditAll,
   BLOCKING_VERDICTS,
   DOI_RE,
+  MATCH_BASIS_LABEL,
   referencesSection,
   trimDoiTail,
   normDoi,
@@ -56,14 +57,33 @@ function render(results: AuditResult[], label: string): string {
     ["BENIGN_DRIFT", "UNVERIFIED", "REGISTRY_UNREACHABLE"].includes(r.verdict),
   );
   const label_ = (r: AuditResult) => (r.title ? `${r.key} "${r.title.slice(0, 55)}"` : r.key);
+  /**
+   * How the record was found, and what it actually is. A DOI-anchored match and a
+   * title guess used to print identically, leaving no way to tell "your reference
+   * is wrong" from "the wrong paper was matched".
+   */
+  const matched = (r: AuditResult): string[] => {
+    if (!r.truth_title || !r.match_basis) return [];
+    const how = MATCH_BASIS_LABEL[r.match_basis] +
+      (r.match_confidence !== null ? ` (confidence ${r.match_confidence.toFixed(2)})` : "");
+    const who = [
+      r.truth_authors?.slice(0, 4).join(", ") + (r.truth_authors && r.truth_authors.length > 4 ? " et al." : ""),
+      r.truth_year,
+    ].filter(Boolean).join(", ");
+    return [
+      `      ${how}`,
+      `      record: "${r.truth_title.slice(0, 70)}"${who ? ` — ${who}` : ""}`,
+      ...(r.truth_doi || r.truth_id ? [`      ${r.truth_doi ? `doi:${r.truth_doi}` : r.truth_id}`] : []),
+    ];
+  };
   if (blocking.length) {
     lines.push(`🛑 BLOCKING (${blocking.length}):`);
-    for (const r of blocking) lines.push(`  [${r.verdict}] ${label_(r)}: ${r.notes.join("; ")}`);
+    for (const r of blocking) { lines.push(`  [${r.verdict}] ${label_(r)}: ${r.notes.join("; ")}`); lines.push(...matched(r)); }
     lines.push("");
   }
   if (review.length) {
     lines.push(`⚠️ REVIEW (${review.length}):`);
-    for (const r of review) lines.push(`  [${r.verdict}] ${label_(r)}: ${r.notes.join("; ")}`);
+    for (const r of review) { lines.push(`  [${r.verdict}] ${label_(r)}: ${r.notes.join("; ")}`); lines.push(...matched(r)); }
     lines.push("");
   }
   lines.push(`✅ CONSISTENT: ${counts["CONSISTENT"] ?? 0}`);

@@ -187,7 +187,7 @@
     const counts = {};
     for (const r of out) counts[r.kind] = (counts[r.kind] || 0) + 1;
     const parts = Object.entries(counts).map(([k, n]) => `${n} ${n === 1 ? (KIND[k] || k) : (KIND_PLURAL[k] || k)}`);
-    box.innerHTML = `<b>${out.length} of these are outside the registry:</b> ${esc(parts.join(', '))}. ` +
+    box.innerHTML = `<b>${out.length} of these ${out.length === 1 ? "is" : "are"} outside the registry:</b> ${esc(parts.join(', '))}. ` +
       `The registries index journal articles and books, so a miss here says nothing about the reference itself. Check them by hand.`;
     box.hidden = false;
   }
@@ -197,7 +197,7 @@
     let k, stamp, text;
     if (c.b) {
       k = 'b'; stamp = 'Cannot certify';
-      text = `<b>${c.b} of ${n} entries</b> have blocking verdicts. Fix or remove them before you submit` +
+      text = `<b>${c.b} of ${n} entries</b> ${c.b === 1 ? "has a blocking verdict" : "have blocking verdicts"}. Fix or remove ${c.b === 1 ? "it" : "them"} before you submit` +
              (c.r ? `, and check the ${c.r} in review by hand.` : '.');
     } else if (c.r) {
       k = 'r'; stamp = 'Certified with reservations';

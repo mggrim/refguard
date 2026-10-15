@@ -28,7 +28,14 @@ export interface RefEntry {
 export interface Truth {
   source: "crossref" | "openlibrary" | "local";
   title: string;
+  /** The year to report: the print year where the registry knows it. */
   year: string;
+  /**
+   * Every year the record can rightly be cited under: print, online and issued for
+   * an article, each edition for a book. An online-first paper has two correct
+   * years, and a citation of either one is a citation of the published state.
+   */
+  years?: number[];
   journal: string;
   doi: string;
   authors: string[];

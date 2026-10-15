@@ -16,19 +16,26 @@
  * retraction comes back inside the search response at no extra cost.
  */
 import type { RefEntry, Truth } from "./types.ts";
-import { authorOverlap, normDoi, titleSim } from "./match.ts";
+import { authorOverlap, knownYears, normDoi, titleSim } from "./match.ts";
 import { registryGet, SEARCH_ACCEPT, type RegistryOptions, type SearchMatch } from "./registry.ts";
 
 const ENDPOINT = "https://api.crossref.org/works";
 // `updated-by` carries the Retraction Watch record, so a retraction comes back
-// inside the search response and costs no extra call.
-const SELECT = "DOI,title,author,issued,container-title,type,updated-by";
+// inside the search response and costs no extra call. `issued` alone is the EARLIER
+// of the print and online dates, so an online-first paper cited by its print year
+// always looked a year out; the print and online dates are asked for separately.
+const SELECT = "DOI,title,author,issued,published-print,published-online,published,container-title,type,updated-by";
+
+type CrossrefDate = { "date-parts"?: number[][] };
 
 interface CrossrefItem {
   DOI?: string;
   title?: string[];
   author?: Array<{ family?: string; name?: string }>;
-  issued?: { "date-parts"?: number[][] };
+  issued?: CrossrefDate;
+  "published-print"?: CrossrefDate;
+  "published-online"?: CrossrefDate;
+  published?: CrossrefDate;
   "container-title"?: string[];
   type?: string;
   "updated-by"?: Array<{ type?: string; source?: string; DOI?: string }>;
@@ -48,12 +55,25 @@ export function crossrefIsBookish(type: string | undefined): boolean {
   return Boolean(type && /^(book|monograph|edited-book|reference-book|book-chapter|book-part|book-section)$/.test(type));
 }
 
+const yearOf = (d: CrossrefDate | undefined): number | null => {
+  const y = d?.["date-parts"]?.[0]?.[0];
+  return typeof y === "number" && y > 1000 ? y : null;
+};
+
 function itemToTruth(item: CrossrefItem): Truth {
-  const year = item.issued?.["date-parts"]?.[0]?.[0];
+  // The print year is the published state, so it is the one reported. The online
+  // and issued years are kept beside it because a citation of either is still a
+  // citation of this record.
+  const print = yearOf(item["published-print"]);
+  const issued = yearOf(item.issued);
+  const year = print ?? issued;
+  const years = [print, yearOf(item["published-online"]), yearOf(item.published), issued]
+    .filter((y): y is number => y !== null);
   return {
     source: "crossref",
     title: item.title?.[0] ?? "",
     year: year ? String(year) : "",
+    years: [...new Set(years)],
     journal: item["container-title"]?.[0] ?? "",
     doi: normDoi(item.DOI ?? ""),
     authors: (item.author ?? [])
@@ -84,20 +104,43 @@ export async function crossrefSearch(
     (opts.mailto ? `&mailto=${encodeURIComponent(opts.mailto)}` : "");
   const data = (await registryGet(url, opts)) as { message?: { items?: CrossrefItem[] } } | null;
 
-  let best: Truth | null = null;
-  let bestScore = 0;
-  for (const item of data?.message?.items ?? []) {
+  const cited = Number(entry.year);
+  const scored = (data?.message?.items ?? []).map((item) => {
     const t = itemToTruth(item);
     let score = entry.title ? titleSim(entry.title, t.title) : 0;
     const overlap = authorOverlap(entry.authors, t.authors);
     if (overlap >= 0) score = score * 0.7 + overlap * 0.3;
-    if (entry.year && t.year && Math.abs(Number(entry.year) - Number(t.year)) <= 1) score += 0.05;
-    if (score > bestScore) {
-      bestScore = score;
-      best = t;
-    }
+    if (cited && knownYears(t).some((y) => Math.abs(cited - y) <= 1)) score += 0.05;
+    return { t, score };
+  });
+  let best: { t: Truth; score: number } | null = null;
+  for (const c of scored) if (!best || c.score > best.score) best = c;
+  // A working paper and the article it became carry the same title and authors,
+  // and the preprint often matches the cited year better because it came first.
+  // The journal record is the published state, so it wins unless the preprint is
+  // clearly the better match.
+  if (best && isPreprint(best.t)) {
+    const vor = scored
+      .filter((c) => !isPreprint(c.t) && c.t.type === "journal-article" && c.score >= best!.score - PREPRINT_MARGIN)
+      .sort((a, b) => b.score - a.score)[0];
+    if (vor && vor.score >= SEARCH_ACCEPT) best = vor;
   }
-  return bestScore >= SEARCH_ACCEPT && best ? { truth: best, score: Math.min(1, bestScore) } : null;
+  return best && best.score >= SEARCH_ACCEPT ? { truth: best.t, score: Math.min(1, best.score) } : null;
+}
+
+/**
+ * How far below a preprint a journal record may score and still be preferred. The
+ * year bonus is 0.05 and a subtitle the preprint lacked costs a little title
+ * similarity, so the margin covers both and nothing more.
+ */
+const PREPRINT_MARGIN = 0.1;
+
+/**
+ * SSRN deposits its papers as "journal-article" in "SSRN Electronic Journal", so
+ * its DOI prefix is the reliable sign; other servers use Crossref's own type.
+ */
+export function isPreprint(t: Pick<Truth, "doi" | "type">): boolean {
+  return t.type === "posted-content" || t.doi.startsWith("10.2139/");
 }
 
 /** Direct DOI lookup. Returns null for a DOI Crossref does not hold. */

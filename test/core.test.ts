@@ -171,7 +171,10 @@ describe("manuscript-audit regressions", () => {
         }) as typeof fetch,
       },
     );
-    expect(r.verdict).toBe("BENIGN_DRIFT");
+    // Ten years is not drift. It is a question about which record or edition was
+    // cited, and calling it benign hid wrong matches on a real manuscript.
+    expect(r.verdict).toBe("AMBIGUOUS_MATCH");
+    expect(BLOCKING_VERDICTS).not.toContain(r.verdict);
     expect(r.notes.join(" ")).toContain("edition");
   });
 
@@ -675,7 +678,9 @@ describe("books route to Open Library", () => {
     const r = await auditEntry(grounded, {
       fetchFn: olDocs([{ title: "The discovery of grounded theory", author_name: ["Barney G. Glaser", "Anselm L. Strauss"], first_publish_year: 1967, edition_count: 4, key: "/works/OL2W" }]),
     });
-    expect(r.verdict).toBe("BENIGN_DRIFT");
+    // The record carries no edition years here, so the gap cannot be settled: it is
+    // an edition question for the author, which is review, not drift.
+    expect(r.verdict).toBe("AMBIGUOUS_MATCH");
     expect(r.notes[0]).toContain("4 editions");
     expect(BLOCKING_VERDICTS).not.toContain(r.verdict);
   });
@@ -764,4 +769,206 @@ test("an APA date carrying a month still parses", () => {
   expect(refs[0]?.year).toBe("2015");
   expect(refs[0]?.title).toBe("What is disruptive innovation?");
   expect(refs[1]?.year).toBe("2013");
+});
+
+// ---------- the published state (2026-10-15 audit of Logue & Grimes 2022) ----------
+//
+// Six "year off by 1" flags on that manuscript cited the correct print year. The
+// tool read only Crossref's `issued`, which is the earlier of print and online, so
+// every online-first paper looked a year out. Six more multi-year gaps were called
+// benign although they were different records, and the one blocking verdict was a
+// search that had found a different paper by the same authors.
+
+describe("the print year is the published state", () => {
+  const grodal: RefEntry = {
+    key: "grodal2018", title: "Field expansion and contraction: How communities shape social and symbolic boundaries",
+    authors: ["Grodal"], year: "2018", journal: "Administrative Science Quarterly", doi: "", raw: "x",
+  };
+  // Crossref's real shape for this paper: online November 2017, in print December 2018.
+  const onlineFirst = xref({
+    DOI: "10.1177/0001839217744555", title: ["Field Expansion and Contraction: How Communities Shape Social and Symbolic Boundaries"],
+    author: [{ family: "Grodal" }], "container-title": ["Administrative Science Quarterly"],
+    issued: { "date-parts": [[2017, 11, 27]] },
+    "published-online": { "date-parts": [[2017, 11, 27]] },
+    "published-print": { "date-parts": [[2018, 12]] },
+  });
+
+  test("the search asks Crossref for the print and online dates", async () => {
+    const seen: string[] = [];
+    const base = xrefStub(onlineFirst);
+    await auditEntry(grodal, { fetchFn: (async (u: any) => { seen.push(String(u)); return base(u); }) as typeof fetch });
+    const search = seen.find((u) => u.includes("api.crossref.org/works?")) ?? "";
+    expect(search).toContain("published-print");
+    expect(search).toContain("published-online");
+  });
+
+  test("citing the print year of an online-first paper is consistent", async () => {
+    const r = await auditEntry(grodal, { fetchFn: xrefStub(onlineFirst) });
+    expect(r.verdict).toBe("CONSISTENT");
+    expect(r.notes).toEqual([]);
+    expect(r.truth_year).toBe("2018");
+  });
+
+  test("citing the online year of the same paper is consistent too", async () => {
+    const r = await auditEntry({ ...grodal, year: "2017" }, { fetchFn: xrefStub(onlineFirst) });
+    expect(r.verdict).toBe("CONSISTENT");
+    expect(r.notes).toEqual([]);
+  });
+
+  test("a one-year gap that neither date explains is still drift, measured from the nearest year", async () => {
+    const r = await auditEntry({ ...grodal, year: "2019" }, { fetchFn: xrefStub(onlineFirst) });
+    expect(r.verdict).toBe("BENIGN_DRIFT");
+    expect(r.notes.join(" ")).toContain("year off by 1: 2019 vs 2018");
+  });
+
+  test("compare accepts any year the record carries", () => {
+    const t: Truth = { ...truth, year: "1999", years: [1998, 1999] };
+    expect(compare(entry({ year: "1998" }), t)).toEqual({ verdict: "CONSISTENT", notes: [] });
+    expect(compare(entry({ year: "1999" }), t)).toEqual({ verdict: "CONSISTENT", notes: [] });
+    expect(compare(entry({ year: "1996" }), t).verdict).toBe("INCONSISTENT");
+  });
+
+  test("a book cited in a year one of its editions carries is consistent", async () => {
+    const olDocs = (docs: unknown[]) => (async (url: string) =>
+      String(url).includes("openlibrary.org")
+        ? new Response(JSON.stringify({ docs }), { status: 200 })
+        : new Response(JSON.stringify({ message: { items: [] } }), { status: 200 })) as unknown as typeof fetch;
+    const r = await auditEntry({
+      key: "glaser2009", title: "The discovery of grounded theory", authors: ["Glaser", "Strauss"],
+      year: "2009", journal: "", doi: "",
+      raw: "Glaser, B. G., & Strauss, A. L. 2009. The discovery of grounded theory. New Brunswick, NJ: Aldine.",
+    }, {
+      fetchFn: olDocs([{
+        title: "The discovery of grounded theory", author_name: ["Barney G. Glaser", "Anselm L. Strauss"],
+        first_publish_year: 1967, publish_year: [1967, 1999, 2009, 2017], edition_count: 4, key: "/works/OL2W",
+      }]),
+    });
+    expect(r.verdict).toBe("CONSISTENT");
+    expect(r.notes).toEqual([]);
+  });
+});
+
+describe("a search that found a different work is not a finding", () => {
+  // The HBR summary was cited; the search found the PLOS ONE paper the same
+  // authors wrote. Title similarity 0.50, accepted on the author overlap alone.
+  const johnson: RefEntry = {
+    key: "johnson2019", title: "Has sexual harassment at work decreased since #metoo?",
+    authors: ["Johnson", "Keplinger", "Kirk", "Barnes"], year: "2019", journal: "Harvard Business Review", doi: "", raw: "x",
+  };
+  const plos = xref({
+    DOI: "10.1371/journal.pone.0218313",
+    title: ["Women at work: Changes in sexual harassment between September 2016 and September 2018"],
+    author: [{ family: "Keplinger" }, { family: "Johnson" }, { family: "Kirk" }, { family: "Barnes" }],
+    issued: { "date-parts": [[2019]] }, "container-title": ["PLOS ONE"],
+  });
+
+  test("a weak title match is reported as unverified, not as an error", async () => {
+    const r = await auditEntry(johnson, { fetchFn: xrefStub(plos) });
+    expect(r.verdict).toBe("UNVERIFIED");
+    expect(BLOCKING_VERDICTS).not.toContain(r.verdict);
+    const notes = r.notes.join(" ");
+    expect(notes).toContain("different work");
+    expect(notes).toContain("not evidence of an error");
+    expect(notes).not.toContain("venue mismatch");
+  });
+
+  test("a strong title match whose venue disagrees is still field mixing", async () => {
+    const r = await auditEntry({ ...johnson, title: (plos.title as string[])[0]! }, { fetchFn: xrefStub(plos) });
+    expect(r.verdict).toBe("INCONSISTENT");
+    expect(r.notes.join(" ")).toContain("venue mismatch");
+  });
+
+  test("when one registry returns a different work, the other is still asked", async () => {
+    const weber: RefEntry = {
+      key: "weber1947", title: "The theory of social and economic organization", authors: ["Weber"], year: "1947",
+      journal: "", doi: "", raw: "x",
+    };
+    const fetchFn = (async (u: any) => {
+      const url = String(u);
+      if (url.includes("api.crossref.org/works?"))
+        return new Response(JSON.stringify({ message: { items: [xref({
+          // Shares half its words with the cited title, and the author, so it clears
+          // the search bar while being a different work.
+          DOI: "10.9999/other", title: ["Economic theory in modern states"], author: [{ family: "Weber" }],
+          issued: { "date-parts": [[1947]] }, "container-title": [""],
+        })] } }), { status: 200 });
+      if (url.includes("openlibrary.org"))
+        return new Response(JSON.stringify({ docs: [{
+          title: "The theory of social and economic organization", author_name: ["Max Weber"],
+          first_publish_year: 1947, edition_count: 1, key: "/works/OL9W",
+        }] }), { status: 200 });
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    const r = await auditEntry(weber, { fetchFn });
+    expect(r.verdict).toBe("CONSISTENT");
+    expect(r.match_basis).toBe("book");
+  });
+});
+
+describe("a year gap of two or more on a search match is a record question", () => {
+  test("a 25-year gap on a strong title match asks which record was cited", async () => {
+    const r = await auditEntry({
+      key: "cialdini1993", title: "The Psychology of Persuasion", authors: ["Cialdini"], year: "1993",
+      journal: "", doi: "", raw: "x",
+    }, {
+      fetchFn: xrefStub(xref({
+        DOI: "10.1037/e507392018-001", title: ["Speaking of Psychology: The Power of Persuasion"],
+        author: [{ family: "Cialdini" }], issued: { "date-parts": [[2018]] }, "container-title": [""],
+      })),
+    });
+    expect(r.verdict).toBe("AMBIGUOUS_MATCH");
+    expect(BLOCKING_VERDICTS).not.toContain(r.verdict);
+    const notes = r.notes.join(" ");
+    expect(notes).toContain("2018");
+    expect(notes).toMatch(/which (edition|record)/);
+  });
+
+  test("a library match with a year gap of two or more is a record question too", async () => {
+    const down = (async () => new Response("", { status: 429 })) as unknown as typeof fetch;
+    const r = await auditEntry({
+      key: "battilana2010", title: "Building Sustainable Hybrid Organizations", authors: ["Battilana", "Dorado"],
+      year: "2010", journal: "Academy of Management Journal", doi: "", raw: "x",
+    }, {
+      fetchFn: down, maxRetries: 0, retryBaseMs: 1,
+      local: { lookup: () => ({ id: 1, title: "Building Sustainable Hybrid Organizations", year: "2007",
+        journal: "Academy of Management Journal", authors: ["Battilana", "Dorado"], doi: "", pdf: null }) },
+    });
+    expect(r.verdict).toBe("AMBIGUOUS_MATCH");
+    expect(r.notes.join(" ")).toContain("2007");
+  });
+});
+
+describe("the version of record beats a preprint", () => {
+  const paper: RefEntry = {
+    key: "doe2010", title: "A Real Paper", authors: ["Doe"], year: "2010", journal: "", doi: "", raw: "x",
+  };
+  const searchStub = (items: unknown[]) => (async (u: any) => {
+    const url = String(u);
+    if (url.includes("api.crossref.org/works?")) return new Response(JSON.stringify({ message: { items } }), { status: 200 });
+    return new Response(JSON.stringify({ docs: [] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  // The journal record is a year off the cited year, so the preprint wins on the
+  // year bonus alone: that is the case the preference exists for.
+  const journal = xref({ DOI: "10.1234/vor", issued: { "date-parts": [[2012]] } });
+
+  test("an SSRN record ranked first loses to the journal article", async () => {
+    // SSRN deposits as "journal-article" in "SSRN Electronic Journal", so the
+    // prefix is the reliable sign.
+    const ssrn = xref({ DOI: "10.2139/ssrn.1234567", "container-title": ["SSRN Electronic Journal"] });
+    const r = await auditEntry(paper, { fetchFn: searchStub([ssrn, journal]) });
+    expect(r.truth_doi).toBe("10.1234/vor");
+  });
+
+  test("a posted-content record ranked first loses to the journal article", async () => {
+    const preprint = xref({ DOI: "10.31235/osf.io/abcde", type: "posted-content", "container-title": [] });
+    const r = await auditEntry(paper, { fetchFn: searchStub([preprint, journal]) });
+    expect(r.truth_doi).toBe("10.1234/vor");
+  });
+
+  test("a preprint that matches far better than any journal record is kept", async () => {
+    const ssrn = xref({ DOI: "10.2139/ssrn.1234567" });
+    const other = xref({ DOI: "10.1234/other", title: ["Something else about real papers entirely"], author: [{ family: "Roe" }] });
+    const r = await auditEntry(paper, { fetchFn: searchStub([ssrn, other]) });
+    expect(r.truth_doi).toBe("10.2139/ssrn.1234567");
+  });
 });

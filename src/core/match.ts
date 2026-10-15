@@ -1,3 +1,5 @@
+import type { Truth } from "./types.ts";
+
 const STOPWORDS = new Set(["the", "a", "an", "of", "and", "in", "on", "for", "to", "with"]);
 
 export function normalize(s: string): string {
@@ -88,6 +90,15 @@ export function authorOverlap(claimed: string[], truth: string[]): number {
   const truthSet = new Set(truth.map(surnameKey));
   const hits = claimed.filter((c) => truthSet.has(surnameKey(c))).length;
   return hits / claimed.length;
+}
+
+/**
+ * Every year a record can rightly be cited under, falling back to its one reported
+ * year. A blank or zero year is no year at all, never a year to compare against.
+ */
+export function knownYears(t: Pick<Truth, "year" | "years">): number[] {
+  const ys = t.years?.length ? t.years : [Number(t.year)];
+  return ys.filter((y) => Number.isInteger(y) && y > 1000);
 }
 
 export function normDoi(doi: string): string {

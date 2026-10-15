@@ -16,12 +16,15 @@ import { authorOverlap, titleSim } from "./match.ts";
 import { registryGet, SEARCH_ACCEPT, type RegistryOptions, type SearchMatch } from "./registry.ts";
 
 const ENDPOINT = "https://openlibrary.org/search.json";
-const FIELDS = "title,author_name,first_publish_year,edition_count,key";
+// `publish_year` lists the year of every edition Open Library holds, which is what
+// settles a year gap on a book: a year that one of its editions carries is correct.
+const FIELDS = "title,author_name,first_publish_year,publish_year,edition_count,key";
 
 interface OpenLibraryDoc {
   title?: string;
   author_name?: string[];
   first_publish_year?: number;
+  publish_year?: number[];
   edition_count?: number;
   key?: string;
 }
@@ -50,6 +53,7 @@ function docToTruth(doc: OpenLibraryDoc): Truth {
     // The earliest printing. Later editions are legitimate alternative years,
     // which is what `editions` exists to say.
     year: doc.first_publish_year ? String(doc.first_publish_year) : "",
+    years: [...new Set([doc.first_publish_year ?? 0, ...(doc.publish_year ?? [])])].filter((y) => y > 1000),
     journal: "", // a book has no venue, so venue comparison has nothing to contest
     doi: "",
     authors: (doc.author_name ?? []).map((n) => {

@@ -4,8 +4,16 @@ import type { SearchMatch } from "./registry.ts";
 import { REF_KIND_LABEL, REGISTRY_COVERS, referenceKind } from "./parse.ts";
 import { openLibrarySearch } from "./openlibrary.ts";
 import { crossrefByDoi, crossrefSearch } from "./crossref.ts";
-import { authorOverlap, GENERIC_TITLE_TOKENS, journalMatch, titleDistinctiveness, titleSim } from "./match.ts";
+import { authorOverlap, GENERIC_TITLE_TOKENS, journalMatch, knownYears, titleDistinctiveness, titleSim } from "./match.ts";
 import { doiHandleExists, newBreaker, RegistryUnreachable, type RegistryOptions } from "./registry.ts";
+
+/**
+ * Below this title similarity two records are different works. Inside `compare`
+ * that is a title mismatch on a record the reference claims to be; on a search
+ * result it means the search found something else, which says nothing about the
+ * reference.
+ */
+const SAME_WORK_TITLE_SIM = 0.55;
 
 /**
  * Which registry to ask, and in what order. The kind is read from the reference
@@ -35,9 +43,16 @@ async function searchRegistries(
   const noop = async () => null;
   const [first, second] = booky ? [book, article] : [article, bookWorthTrying ? book : noop];
   let outage: RegistryUnreachable | null = null;
+  // A hit whose title is a different work's is kept only as a last resort: the
+  // other registry may hold the work itself, and stopping at the first answer
+  // would report the wrong work while the right one went unasked.
+  let weak: { match: SearchMatch; basis: MatchBasis } | null = null;
+  const differentWork = (h: { match: SearchMatch }) =>
+    Boolean(entry.title && h.match.truth.title) && titleSim(entry.title, h.match.truth.title) < SAME_WORK_TITLE_SIM;
   try {
     const hit = await first();
-    if (hit) return hit;
+    if (hit && !differentWork(hit)) return hit;
+    weak = hit;
   } catch (e) {
     // The preferred registry being down must not stop the other from answering,
     // but it must not be forgotten either: "not found" and "could not look" are
@@ -47,13 +62,14 @@ async function searchRegistries(
   }
   try {
     const hit = await second();
-    if (hit) return hit;
+    if (hit && !differentWork(hit)) return hit;
+    weak = weak ?? hit;
   } catch (e) {
     if (!(e instanceof RegistryUnreachable)) throw e;
     outage = outage ?? e;
   }
   if (outage) throw outage;
-  return null;
+  return weak;
 }
 
 export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; notes: string[] } {
@@ -72,7 +88,7 @@ export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; note
 
   if (entry.title && truth.title) {
     const sim = titleSim(entry.title, truth.title);
-    if (sim < 0.55) {
+    if (sim < SAME_WORK_TITLE_SIM) {
       notes.push(
         `title mismatch: "${entry.title.slice(0, 60)}" vs "${truth.title.slice(0, 60)}" (sim ${sim.toFixed(2)})`,
       );
@@ -84,17 +100,23 @@ export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; note
   }
 
   // A four-digit year on both sides, or there is nothing to compare. A library
-  // record with a blank or zero year used to read as "year off by 2021".
-  const yearOf = (y: string) => (/^\d{4}$/.test(y) && Number(y) > 1000 ? Number(y) : null);
-  const ey = yearOf(entry.year);
-  const ty = yearOf(truth.year);
-  if (ey !== null && ty !== null) {
-    const dy = Math.abs(ey - ty);
+  // record with a blank or zero year used to read as "year off by 2021". A record
+  // can carry several correct years (print and online for an article, one per
+  // edition for a book), and citing any of them is citing the published state, so
+  // a gap is measured from the nearest one.
+  const ey = /^\d{4}$/.test(entry.year) && Number(entry.year) > 1000 ? Number(entry.year) : null;
+  const tys = knownYears(truth);
+  if (ey !== null && tys.length) {
+    const nearest = tys.reduce((a, b) => (Math.abs(ey - b) < Math.abs(ey - a) ? b : a));
+    const dy = Math.abs(ey - nearest);
+    // With only one year on the record the gap may still be online-first against
+    // print; with both on it, that explanation has already been ruled out.
+    const why = tys.length > 1 ? "" : " (possibly online-first vs print)";
     if (dy === 1) {
-      notes.push(`year off by 1: ${entry.year} vs ${truth.year} (likely online-first vs print)`);
+      notes.push(`year off by 1: ${entry.year} vs ${nearest}${why}`);
       drift = true;
     } else if (dy >= 2) {
-      notes.push(`year off by ${dy}: ${entry.year} vs ${truth.year}`);
+      notes.push(`year off by ${dy}: ${entry.year} vs ${nearest}`);
       blocking = true;
     }
   }
@@ -251,13 +273,15 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
       return {
         ...withTruth({ source: "local", title: local.title, year: local.year, journal: local.journal,
                        doi: local.doi, authors: local.authors, retracted: false }, "local", null),
-        verdict: contradicted ? "INCONSISTENT" : yearOnly ? "BENIGN_DRIFT" : "REGISTRY_UNREACHABLE",
+        // A gap of two years or more is a question about which record was cited, so
+        // it is never drift: drift is reserved for differences that change nothing.
+        verdict: contradicted ? "INCONSISTENT" : yearOnly ? "AMBIGUOUS_MATCH" : "REGISTRY_UNREACHABLE",
         notes: [
           ...c.notes,
           contradicted
             ? "registry unreachable; this mismatch is against your local library metadata"
             : yearOnly
-              ? "matched in your local library by title, not DOI — a year gap here is usually a different edition or printing; confirm by hand"
+              ? `matched in your local library by title, not DOI; your library holds the ${local.year} record, so check which edition or printing you cited`
               : "registry unreachable; matches your local library, which is not certification (no registry record, no retraction check)",
         ],
         truth_source: "local",
@@ -306,48 +330,55 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
         truth_title: null,
       };
     }
-    const c = compare(entry, truth);
-    // A book with several printings has several correct years. Open Library reports
-    // the first printing plus an edition count, so a year gap on a multi-edition work
-    // is an edition, not an error — this is the complaint that started the project.
-    if (truth.source === "openlibrary" && (truth.editions ?? 1) > 1 && c.verdict === "INCONSISTENT") {
-      // Open Library often lists only the first author on a work record, so a
-      // partial author overlap is a gap in its data, not a disagreement.
-      const editionOnly =
-        c.notes.length > 0 &&
-        c.notes.every((n) => n.startsWith("year off by") || n.startsWith("partial author overlap"));
-      if (editionOnly) {
+    // A search hit whose title is a different work's is no match at all. Comparing
+    // its fields reported a correct HBR citation as an error because the search
+    // had found the PLOS ONE paper the same authors wrote. With no record of the
+    // cited work, the honest verdict is the one for a reference nothing confirmed.
+    // UNVERIFIED rather than AMBIGUOUS_MATCH, because AMBIGUOUS_MATCH says a record
+    // of the same name was found and may be the wrong one; here nothing of the
+    // same name was found. The record is named in the note, not reported as the
+    // match, so the report does not print "matched by" above a non-match.
+    if ((basis === "search" || basis === "book") && entry.title && truth.title) {
+      const sim = titleSim(entry.title, truth.title);
+      if (sim < SAME_WORK_TITLE_SIM) {
+        const who = [truth.authors.slice(0, 2).join(", "), truth.year].filter(Boolean).join(", ");
         return {
-          ...withTruth(truth, "book", score),
-          verdict: "BENIGN_DRIFT",
+          ...base,
+          verdict: "UNVERIFIED",
           notes: [
-            // Open Library's first_publish_year is the earliest printing IT holds,
-            // which is not always the true first edition, so do not assert which
-            // printing the author cited — only that several exist.
-            `Open Library records ${truth.editions} editions of this work; edition years differ, so confirm which printing you cited`,
-            ...c.notes,
+            `the registry search returned only a different work ("${truth.title.slice(0, 70)}"${who ? `, ${who}` : ""}; title similarity ${sim.toFixed(2)}); this is not evidence of an error in your reference, but nothing confirmed it, so check it by hand`,
           ],
         };
       }
     }
-    // A search-based match (no DOI anchor) that differs ONLY in year is more
-    // likely a different edition or an online-first record of the same work
-    // than a manuscript error — books and slow journals hit this constantly.
-    // Without a DOI we cannot be sure we matched the right record, so blocking
-    // would be overconfident: downgrade to review with an explicit note.
+    const c = compare(entry, truth);
+    // A search-based match (no DOI anchor) whose only disagreement is a year gap of
+    // two or more cannot be an online-first offset: the print and online years are
+    // both on the record already. It is a different edition, a reprint, or a
+    // different record of a similar name, and which one is a question only the
+    // author can answer. Calling it drift hid six wrong matches on one manuscript,
+    // and blocking would claim an error the evidence does not show, so it goes to
+    // review as a question about the record. A DOI-anchored gap still blocks.
+    // Open Library work records often list only the first author, so a partial
+    // author overlap there is a gap in its data, not a second disagreement.
     const viaDoi = Boolean(entry.doi) && truth.doi === entry.doi;
-    if (
-      c.verdict === "INCONSISTENT" &&
-      !viaDoi &&
-      c.notes.length > 0 &&
-      c.notes.every((n) => n.startsWith("year off by") || n.startsWith("title drift"))
-    ) {
+    const recordQuestion = (n: string) =>
+      n.startsWith("year off by") || n.startsWith("title drift") ||
+      (truth.source === "openlibrary" && n.startsWith("partial author overlap"));
+    if (c.verdict === "INCONSISTENT" && !viaDoi && c.notes.length > 0 && c.notes.every(recordQuestion)) {
+      const years = knownYears(truth).sort((a, b) => a - b);
+      const held = years.length > 1 ? `carries the years ${years.join(", ")}` : `is from ${truth.year}`;
       return {
         ...withTruth(truth, basis ?? "search", score),
-        verdict: "BENIGN_DRIFT",
+        verdict: "AMBIGUOUS_MATCH",
         notes: [
+          // Open Library's first_publish_year is the earliest printing IT holds,
+          // which is not always the true first edition, so do not assert which
+          // printing the author cited, only which ones the record carries.
+          truth.source === "openlibrary" && (truth.editions ?? 1) > 1
+            ? `Open Library records ${truth.editions} editions of this work, none from ${entry.year}; check which edition you cited`
+            : `matched by title/author search, not DOI; the record found ${held}, so check which record or edition you cited`,
           ...c.notes,
-          "matched by title/author search, not DOI — year gap likely a different edition or online-first record; confirm the year by hand",
         ],
       };
     }
@@ -365,7 +396,7 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
       const overlap = authorOverlap(entry.authors, truth.authors);
       if (overlap === 0) {
         return {
-          ...withTruth(truth, "search", score),
+          ...withTruth(truth, basis ?? "search", score),
           verdict: "AMBIGUOUS_MATCH",
           notes: [
             titleDistinctiveness(entry.title) < GENERIC_TITLE_TOKENS

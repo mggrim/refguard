@@ -53,6 +53,9 @@ export interface Truth {
   editions?: number;
   /** Crossref only: the publisher's own work type ("journal-article", "book"). */
   type?: string;
+  /** Crossref only: volume and issue, so a report can name the version of record. */
+  volume?: string;
+  issue?: string;
 }
 
 export interface AuditResult {
@@ -82,9 +85,12 @@ export interface AuditResult {
   truth_id: string | null;
   local_id: number | string | null;
   local_pdf: string | null;
+  /** Whether this deserves the author's time, and why. Null when CONSISTENT. */
+  attention?: Attention | null;
 }
 
 import type { RefKind } from "./parse.ts";
+import type { Attention } from "./attention.ts";
 
 export type MatchBasis = "doi" | "search" | "book" | "local";
 

@@ -16,6 +16,7 @@
  * retraction comes back inside the search response at no extra cost.
  */
 import type { RefEntry, Truth } from "./types.ts";
+import type { RefKind } from "./parse.ts";
 import { authorOverlap, knownYears, normDoi, titleSim } from "./match.ts";
 import { registryGet, SEARCH_ACCEPT, type RegistryOptions, type SearchMatch } from "./registry.ts";
 
@@ -24,7 +25,7 @@ const ENDPOINT = "https://api.crossref.org/works";
 // inside the search response and costs no extra call. `issued` alone is the EARLIER
 // of the print and online dates, so an online-first paper cited by its print year
 // always looked a year out; the print and online dates are asked for separately.
-const SELECT = "DOI,title,author,issued,published-print,published-online,published,container-title,type,updated-by";
+const SELECT = "DOI,title,author,issued,published-print,published-online,published,container-title,volume,issue,type,updated-by";
 
 type CrossrefDate = { "date-parts"?: number[][] };
 
@@ -37,6 +38,8 @@ interface CrossrefItem {
   "published-online"?: CrossrefDate;
   published?: CrossrefDate;
   "container-title"?: string[];
+  volume?: string;
+  issue?: string;
   type?: string;
   "updated-by"?: Array<{ type?: string; source?: string; DOI?: string }>;
 }
@@ -87,6 +90,8 @@ function itemToTruth(item: CrossrefItem): Truth {
     retracted: isRetracted(item),
     id: item.DOI ? `https://doi.org/${item.DOI}` : undefined,
     type: item.type,
+    volume: item.volume,
+    issue: item.issue,
   };
 }
 
@@ -98,6 +103,7 @@ function itemToTruth(item: CrossrefItem): Truth {
 export async function crossrefSearch(
   entry: RefEntry,
   opts: RegistryOptions = {},
+  kind?: RefKind,
 ): Promise<SearchMatch | null> {
   const query = (entry.raw && entry.raw.length > entry.title.length ? entry.raw : entry.title).slice(0, 400);
   if (!query.trim()) return null;
@@ -106,7 +112,7 @@ export async function crossrefSearch(
   const data = (await registryGet(url, opts)) as { message?: { items?: CrossrefItem[] } } | null;
 
   const cited = Number(entry.year);
-  const scored = (data?.message?.items ?? []).map(itemToTruth).filter((t) => !isReviewOf(entry, t)).map((t) => {
+  const scored = (data?.message?.items ?? []).map(itemToTruth).filter((t) => !isReviewOf(entry, t) && !wrongKind(kind, t)).map((t) => {
     let score = entry.title ? titleSim(entry.title, t.title) : 0;
     const overlap = authorOverlap(entry.authors, t.authors);
     if (overlap >= 0) score = score * 0.7 + overlap * 0.3;
@@ -134,6 +140,16 @@ export async function crossrefSearch(
  * similarity, so the margin covers both and nothing more.
  */
 const PREPRINT_MARGIN = 0.1;
+
+/**
+ * A book or chapter is never a journal article. Reviews of a book are journal
+ * articles carrying the book's title, and an author's article that shares a
+ * book's name (Henderson's 2021 "Reimagining Capitalism" against her 2020 book)
+ * is a different work, so for a book citation neither is a candidate.
+ */
+function wrongKind(kind: RefKind | undefined, t: Truth): boolean {
+  return (kind === "book" || kind === "chapter") && (t.type === "journal-article" || t.type === "posted-content");
+}
 
 /**
  * A review of the cited book carries the book's title, so it scores as a match, and

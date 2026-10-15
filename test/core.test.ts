@@ -606,15 +606,17 @@ describe("a generic title that matches the wrong work is not called an error", (
   });
   const fetchFn = xrefStub(wrongWork);
 
-  test("short title, no shared author, no DOI anchor -> AMBIGUOUS_MATCH", async () => {
+  test("short title, no shared author, no DOI anchor -> not found, with no record shown", async () => {
     const entry: RefEntry = {
       key: "marshall1995", title: "Designing Qualitative Research",
       authors: ["Marshall", "Rossman"], year: "1995", journal: "", doi: "", raw: "x",
     };
     const r = await auditEntry(entry, { fetchFn });
-    expect(r.verdict).toBe("AMBIGUOUS_MATCH");
+    // A record with no author in common is no candidate at all; showing it was
+    // noise (triage round, 2026-10-15). It reads as not found.
+    expect(r.verdict).toBe("UNVERIFIED");
     expect(BLOCKING_VERDICTS).not.toContain(r.verdict);
-    expect(r.notes[0]).toContain("too general");
+    expect(r.truth_title).toBeNull();
   });
 
   test("a DOI anchor makes the same disagreement a real error", async () => {

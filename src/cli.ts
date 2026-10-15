@@ -19,14 +19,14 @@ import {
   BLOCKING_VERDICTS,
   DOI_RE,
   MATCH_BASIS_LABEL,
-  REF_KIND_LABEL,
-  REF_KIND_PLURAL,
-  REGISTRY_COVERS,
   referencesSection,
   trimDoiTail,
   normDoi,
   parseBib,
   readReferenceList,
+  ATTENTION_LABEL,
+  ATTENTION_ORDER,
+  type AttentionLevel,
   type AuditResult,
   type ReferenceList,
   type RefEntry,
@@ -80,10 +80,6 @@ export function render(results: AuditResult[], label: string, reading?: Referenc
   const lines = [`RefGuard — ${label}`, "=".repeat(60)];
   lines.push(Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(" · "), "");
   if (reading) lines.push(...renderReading(reading));
-  const blocking = results.filter((r) => (BLOCKING_VERDICTS as readonly string[]).includes(r.verdict));
-  const review = results.filter((r) =>
-    ["BENIGN_DRIFT", "UNVERIFIED", "AMBIGUOUS_MATCH", "REGISTRY_UNREACHABLE"].includes(r.verdict),
-  );
   const label_ = (r: AuditResult) => (r.title ? `${r.key} "${r.title.slice(0, 55)}"` : r.key);
   /**
    * How the record was found, and what it actually is. A DOI-anchored match and a
@@ -108,28 +104,35 @@ export function render(results: AuditResult[], label: string, reading?: Referenc
       ...(r.truth_doi || r.truth_id ? [`      ${r.truth_doi ? `doi:${r.truth_doi}` : r.truth_id}`] : []),
     ];
   };
-  if (blocking.length) {
-    lines.push(`🛑 BLOCKING (${blocking.length}):`);
-    for (const r of blocking) { lines.push(`  [${r.verdict}] ${label_(r)}: ${r.notes.join("; ")}`); lines.push(...matched(r)); }
-    lines.push("");
-  }
-  // Name what the registry simply does not index, rather than repeating
-  // "could be fabricated" over a pile of books and reports.
-  const uncovered = results.filter((r) => r.verdict === "UNVERIFIED" && !REGISTRY_COVERS[r.kind]);
-  if (uncovered.length) {
-    const byKind = new Map<string, number>();
-    for (const r of uncovered) byKind.set(r.kind, (byKind.get(r.kind) ?? 0) + 1);
-    const parts = [...byKind].map(([k, n]) =>
-      `${n} ${n === 1 ? REF_KIND_LABEL[k as keyof typeof REF_KIND_LABEL] : REF_KIND_PLURAL[k as keyof typeof REF_KIND_PLURAL]}`);
-    lines.push(
-      `📚 OUTSIDE THE REGISTRY (${uncovered.length}): ${parts.join(", ")}.`,
-      "   No registry indexes these, so a miss here says nothing about the reference. Check by hand.",
-      "",
-    );
-  }
-  if (review.length) {
-    lines.push(`⚠️ REVIEW (${review.length}):`);
-    for (const r of review) { lines.push(`  [${r.verdict}] ${label_(r)}: ${r.notes.join("; ")}`); lines.push(...matched(r)); }
+  // Grouped by what the author should do, not by verdict: on one real list, 29 of
+  // 132 references had a verdict other than CONSISTENT and about two of them were
+  // worth changing. The verdict and its notes stay on each line for the detail.
+  const levelOf = (r: AuditResult): AttentionLevel =>
+    r.attention?.level ?? ((BLOCKING_VERDICTS as readonly string[]).includes(r.verdict) ? "fix" : "fine");
+  const reasonOf = (r: AuditResult) => r.attention?.reason ?? r.notes[0] ?? "";
+  const pending = results.filter((r) => r.verdict !== "CONSISTENT");
+  const group = (level: AttentionLevel) => pending.filter((r) => levelOf(r) === level);
+  const n = (level: AttentionLevel) => group(level).length;
+  lines.push(
+    `Needs your attention: ${n("fix") + n("look")} (${ATTENTION_LABEL.fix} ${n("fix")} · ${ATTENTION_LABEL.look} ${n("look")})` +
+      ` · ${ATTENTION_LABEL.fine} ${n("fine")} · ${ATTENTION_LABEL.cant} ${n("cant")} · Consistent ${counts["CONSISTENT"] ?? 0}`,
+    "",
+  );
+  const heading: Record<AttentionLevel, string> = {
+    fix: "🛑 FIX THIS", look: "👀 WORTH A LOOK", fine: "✓ PROBABLY FINE", cant: "📚 CAN'T CHECK HERE",
+  };
+  for (const level of ATTENTION_ORDER) {
+    const rows = group(level);
+    if (!rows.length) continue;
+    lines.push(`${heading[level]} (${rows.length}):`);
+    for (const r of rows) {
+      lines.push(`  ${label_(r)}: ${reasonOf(r)}`);
+      // The detail behind the reason. A source no registry indexes has none.
+      if (level !== "cant") {
+        lines.push(`      [${r.verdict}] ${r.notes.join("; ")}`);
+        lines.push(...matched(r));
+      }
+    }
     lines.push("");
   }
   lines.push(`✅ CONSISTENT: ${counts["CONSISTENT"] ?? 0}`);

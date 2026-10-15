@@ -5,6 +5,7 @@ import { REF_KIND_LABEL, REGISTRY_COVERS, referenceKind } from "./parse.ts";
 import { openLibrarySearch } from "./openlibrary.ts";
 import { crossrefByDoi, crossrefSearch } from "./crossref.ts";
 import { authorOverlap, GENERIC_TITLE_TOKENS, journalMatch, knownYears, titleDistinctiveness, titleSim } from "./match.ts";
+import { attentionFor } from "./attention.ts";
 import { doiHandleExists, newBreaker, RegistryUnreachable, type RegistryOptions } from "./registry.ts";
 
 /**
@@ -33,7 +34,7 @@ async function searchRegistries(
   const article = async () => {
     // One call. Crossref's search response carries the Retraction Watch record, so
     // the retraction check costs nothing extra.
-    const m = await crossrefSearch(entry, opts);
+    const m = await crossrefSearch(entry, opts, kind);
     return m ? { match: m, basis: "search" as MatchBasis } : null;
   };
   const book = async () => {
@@ -47,8 +48,11 @@ async function searchRegistries(
   // other registry may hold the work itself, and stopping at the first answer
   // would report the wrong work while the right one went unasked.
   let weak: { match: SearchMatch; basis: MatchBasis } | null = null;
+  // A record with no author in common counts as weak too: it is usually a review
+  // or a namesake, and the other registry may hold the work itself.
   const differentWork = (h: { match: SearchMatch }) =>
-    Boolean(entry.title && h.match.truth.title) && titleSim(entry.title, h.match.truth.title) < SAME_WORK_TITLE_SIM;
+    (Boolean(entry.title && h.match.truth.title) && titleSim(entry.title, h.match.truth.title) < SAME_WORK_TITLE_SIM) ||
+    authorOverlap(entry.authors, h.match.truth.authors) === 0;
   try {
     const hit = await first();
     if (hit && !differentWork(hit)) return hit;
@@ -165,7 +169,16 @@ export interface AuditOptions extends RegistryOptions {
   local?: LocalLibrary | null;
 }
 
+/** Kinds of source neither registry indexes, so they are not searched at all. */
+const NOT_SEARCHED = new Set<RefKind>(["web", "report", "thesis"]);
+
 export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Promise<AuditResult> {
+  const seen: { truth: Truth | null } = { truth: null };
+  const result = await auditOne(entry, opts, seen);
+  return { ...result, attention: attentionFor(entry, result.kind, result, result.truth_title ? seen.truth : null) };
+}
+
+async function auditOne(entry: RefEntry, opts: AuditOptions, seen: { truth: Truth | null }): Promise<AuditResult> {
   let local: LocalHit | null = null;
   try {
     local = (await opts.local?.lookup(entry)) ?? null;
@@ -248,7 +261,10 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
     // management journals carry almost no DOIs, so every entry rides on search —
     // and when search is down, a Zotero library can still contradict an entry.
     let registryDown = false;
-    if (!truth) {
+    // Web pages, trade press, reports, cases and theses are indexed by neither
+    // registry. Searching for them only ever found something else ("About B Corps"
+    // matched a paper on laboratory animal science), so they are not searched.
+    if (!truth && !NOT_SEARCHED.has(base.kind)) {
       try {
         const m = await searchRegistries(entry, base.kind, opts);
         if (m) { truth = m.match.truth; basis = m.basis; score = m.match.score; }
@@ -360,6 +376,23 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
         };
       }
     }
+    // No author in common and no DOI: the right work would share at least one
+    // author, so this is a record of something else (a review of the book, a
+    // namesake) and showing it as a candidate was noise. The one exception is
+    // field mixing: a distinctive journal-article title that matches exactly, whose
+    // authors are someone else's, is the error this tool exists to catch.
+    if ((basis === "search" || basis === "book") && authorOverlap(entry.authors, truth.authors) === 0) {
+      const sim = entry.title && truth.title ? titleSim(entry.title, truth.title) : 0;
+      const mixing = sim >= 0.9 && titleDistinctiveness(entry.title) >= GENERIC_TITLE_TOKENS && base.kind === "journal";
+      if (!mixing) {
+        return {
+          ...base,
+          verdict: "UNVERIFIED",
+          notes: ["no record with a matching author was found at Crossref or Open Library; not evidence of a problem, but check it by hand"],
+        };
+      }
+    }
+    seen.truth = truth;
     const c = compare(entry, truth);
     // A search-based match (no DOI anchor) whose only disagreement is a year gap of
     // two or more cannot be an online-first offset: the print and online years are
@@ -397,24 +430,18 @@ export async function auditEntry(entry: RefEntry, opts: AuditOptions = {}): Prom
     // distinctive title that matched IS the right paper, so a disagreement is a
     // real error, while a generic title with no author in common and no DOI anchor
     // is far more likely to be a different work with the same name.
-    if (c.verdict === "INCONSISTENT" && (basis === "search" || basis === "book")) {
-      // If the right work had been matched, at least ONE author would agree. With no
-      // DOI anchor and no author in common, "your reference is wrong" and "the wrong
-      // work was matched" are indistinguishable, and asserting the first is how the
-      // tool told an author their correct Blank 2013 citation was a Rasmussen paper.
-      const overlap = authorOverlap(entry.authors, truth.authors);
-      if (overlap === 0) {
-        return {
-          ...withTruth(truth, basis ?? "search", score),
-          verdict: "AMBIGUOUS_MATCH",
-          notes: [
-            titleDistinctiveness(entry.title) < GENERIC_TITLE_TOKENS
-              ? `"${entry.title}" is too general to identify a work on its own, and no author matches, so this is probably a different work with the same title rather than an error in your reference`
-              : "no author matches and there is no DOI to anchor the match, so this is more likely a different work than an error in your reference; confirm against the record below",
-            ...c.notes,
-          ],
-        };
-      }
+    // A record sharing an author but disagreeing elsewhere, on a title too general
+    // to identify one work, may be another work by the same author.
+    if (c.verdict === "INCONSISTENT" && (basis === "search" || basis === "book") &&
+        authorOverlap(entry.authors, truth.authors) > 0 && titleDistinctiveness(entry.title) < GENERIC_TITLE_TOKENS) {
+      return {
+        ...withTruth(truth, basis ?? "search", score),
+        verdict: "AMBIGUOUS_MATCH",
+        notes: [
+          `"${entry.title}" is too general to identify a work on its own; a record by the same author has this title but other fields differ, so it may be a different work`,
+          ...c.notes,
+        ],
+      };
     }
     return { ...withTruth(truth, basis ?? "search", score), verdict: c.verdict, notes: c.notes };
   } catch (e) {

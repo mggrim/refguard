@@ -10,8 +10,10 @@ No AI is involved in the audit — it is pure registry lookup and field comparis
 - **Field mixing** — one paper's title with another paper's authors, year, or journal (the most common silent error in inherited bibliographies)
 - **Wrong authors, years, venues, DOIs** — including near-twin journal confusions ("… Review" vs "… Journal")
 - **Retracted papers** — via the Retraction Watch database, which Crossref publishes
-- **Books** — checked against Open Library, which covers the monographs that predate DOI registration; a year gap on a multi-edition work is reported as an edition question, not an error
-- **Benign drift** — online-first vs print years, dropped subtitles (reported, not blocking)
+- **Books** — checked against Open Library, which covers the monographs that predate DOI registration. A year that any edition carries counts as correct, and a gap that no edition explains is reported as a question about which edition you cited, not as an error
+- **Benign drift** — a one-year gap that neither the print nor the online date explains, a dropped or changed subtitle, or an incomplete author list (reported, not blocking)
+
+A paper published online first has two correct years. RefGuard reads the print, online and issue dates from Crossref, and a citation of any of them matches the record. A year gap of two or more on a record found by DOI is blocking. On a record found by search it is a question about which record or edition you cited, so it goes to review as an ambiguous match. A search that returns only a different work (title similarity below 0.55) is reported as unverified, because it is no evidence about your reference either way. Where Crossref holds both a preprint (SSRN or other posted content) and the journal article, the journal record is used.
 
 ## Fail-closed by design
 
@@ -20,11 +22,12 @@ A network failure is `REGISTRY_UNREACHABLE` (exit 2, "cannot certify") — never
 | Verdict | Meaning | Tier |
 |---|---|---|
 | `CONSISTENT` | Fields match the registry record | pass |
-| `BENIGN_DRIFT` | Formatting/online-first differences only | review |
-| `INCONSISTENT` | Substantive field mismatch | **blocking** |
+| `BENIGN_DRIFT` | Right record, small difference: a one-year gap the print and online dates do not explain, a changed subtitle, or an incomplete author list | review |
+| `INCONSISTENT` | Substantive field mismatch on a record the reference clearly is | **blocking** |
 | `FABRICATED_CANDIDATE` | DOI registered nowhere | **blocking** |
 | `RETRACTED` | Registry marks the work retracted | **blocking** |
-| `UNVERIFIED` | Found nowhere; verify by hand | review |
+| `AMBIGUOUS_MATCH` | A record found by search may be the wrong one: no author in common, or a year gap of two or more; check which record or edition you cited | review |
+| `UNVERIFIED` | Nothing confirmed it: found nowhere, or the search returned only a different work; verify by hand | review |
 | `REGISTRY_UNREACHABLE` | Network problem; cannot certify | review (exit 2) |
 
 ## CLI

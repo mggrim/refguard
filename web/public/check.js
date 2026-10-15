@@ -13,9 +13,9 @@
     FABRICATED_CANDIDATE: 'the DOI is registered nowhere; 404 at both Crossref and doi.org',
     INCONSISTENT: 'the paper exists but a field does not belong to it',
     RETRACTED: 'the registry marks this work retracted',
-    BENIGN_DRIFT: 'formatting, online-first versus print, or a different edition',
-    UNVERIFIED: 'no registry found it; not proof of fabrication',
-    AMBIGUOUS_MATCH: 'a record was found but probably the wrong one; the reference may be fine',
+    BENIGN_DRIFT: 'a year one off that neither the print nor the online date explains, a changed subtitle, or an incomplete author list',
+    UNVERIFIED: 'no registry confirmed it; not proof of fabrication',
+    AMBIGUOUS_MATCH: 'a record was found but may be a different work or edition; the reference may be fine',
     REGISTRY_UNREACHABLE: 'a registry could not be reached, so nothing can be certified',
     CONSISTENT: 'every field matches the registry record',
   };

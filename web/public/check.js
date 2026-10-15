@@ -23,7 +23,7 @@
   const tier = (v) => TIER[v] ?? 'r';          // fail closed: an unknown verdict goes to review
   const form = $('audit'), input = $('input'), go = $('go'), status = $('status'), bar = $('bar'), empty = $('empty'), cert = $('cert');
   const groups = { b:$('g-b'), r:$('g-r'), p:$('g-p') };
-  let results = [], running = false;
+  let results = [], running = false, reading = null;
 
   const updateCount = () => {
     const v = input.value.trim();
@@ -67,6 +67,11 @@
       `Checked against Crossref, Open Library and the doi.org handle registry. No AI is used in this audit.`,
       '',
     ];
+    const notes = readingNotes();
+    if (notes.length) {
+      const heading = 'READING THE LIST: a reference may have been merged into another or missed';
+      lines.push(heading, '-'.repeat(heading.length), ...notes.map((n) => `  ${n}`), '');
+    }
     const groupsOut = [
       ['b', 'BLOCKING — fix or remove before submitting'],
       ['r', 'REVIEW BY HAND — not errors, but not settled either'],
@@ -125,7 +130,31 @@
     bar.style.width = '0';
     for (const g of Object.values(groups)) { g.hidden = true; g.querySelector('.rows').innerHTML = ''; }
     $('coverage').hidden = true;
+    $('reading').hidden = true;
+    reading = null;
     renderTally();
+  }
+
+  // What the reader made of the paste. Every reference the text appears to hold is
+  // either checked or named here, so a missed one is never certified by silence.
+  function readingNotes(){
+    if (!reading) return [];
+    const out = [];
+    if (reading.truncated) out.push(`Only the first ${reading.checked} of ${reading.truncated} entries are checked here. Split the list to check the rest.`);
+    for (const w of reading.warnings || []) out.push(w.message);
+    return out;
+  }
+  function renderReading(){
+    const box = $('reading');
+    const notes = readingNotes();
+    if (!notes.length) { box.hidden = true; return; }
+    const n = reading.parsed, m = reading.expected;
+    const lead = m > n
+      ? `<b>The reader found ${n} references, but the text appears to hold ${m}.</b> `
+      : `<b>The reader may have joined two references into one.</b> `;
+    box.innerHTML = lead + 'Check these places in your list before relying on the result:' +
+      '<ul>' + notes.map((t) => `<li>${esc(t)}</li>`).join('') + '</ul>';
+    box.hidden = false;
   }
 
   function tally(){ const c = { b:0, r:0, p:0 }; for (const r of results) c[tier(r.verdict)]++; return c; }
@@ -202,6 +231,9 @@
     } else if (c.r) {
       k = 'r'; stamp = 'Certified with reservations';
       text = `No entry has a blocking verdict, but the registry could not settle <b>${c.r} of ${n}</b>. Check those by hand.`;
+    } else if (readingNotes().length) {
+      k = 'r'; stamp = 'Certified with reservations';
+      text = `Every entry that was read matches the scholarly record, but the reader may have missed a reference. Check the places named above.`;
     } else {
       k = 'p'; stamp = 'Certified';
       text = `All <b>${n} entries</b> match the scholarly record, and none is marked retracted.`;
@@ -224,6 +256,10 @@
       const parsed = await pr.json();
       if (!pr.ok) { status.textContent = parsed.error || `Could not read that (${pr.status})`; status.className = 'status err'; return; }
       const entries = parsed.entries;
+      if (parsed.reading) {
+        reading = { ...parsed.reading, parsed: parsed.reading.parsed ?? entries.length, checked: entries.length };
+        renderReading();
+      }
       for (let i = 0; i < entries.length; i++) {
         status.textContent = `${i + 1} of ${entries.length}: asking the registry about ${entries[i].key}…`;
         bar.style.width = `${(i / entries.length) * 100}%`;
@@ -232,7 +268,8 @@
                      : { key: entries[i].key, title: entries[i].title, year: entries[i].year, verdict: 'REGISTRY_UNREACHABLE', notes: [`server error ${ar.status}`] });
       }
       bar.style.width = '100%';
-      status.textContent = `${entries.length} entries checked.`;
+      const set = reading && reading.skipped ? ` ${reading.skipped} ${reading.skipped === 1 ? 'passage that is' : 'passages that are'} not a reference ${reading.skipped === 1 ? 'was' : 'were'} set aside.` : '';
+      status.textContent = `${entries.length} entries checked.${set}`;
       renderCoverage();
       certify();
     } catch (err) {

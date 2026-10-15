@@ -3,11 +3,11 @@
  *
  * The browser drives the audit one entry at a time so each request stays
  * within subrequest limits and the UI can show progress:
- *   POST /api/parse        {input}  → {entries: RefEntry[]}
+ *   POST /api/parse        {input}  → {entries: RefEntry[], reading}
  *   POST /api/audit-entry  {entry}  → AuditResult
  * Static UI is served from the assets binding.
  */
-import { auditEntry, parseBib, parseTextRefs, type RefEntry } from "../src/core/index.ts";
+import { auditEntry, parseBib, readReferenceList, type RefEntry } from "../src/core/index.ts";
 
 const MAX_INPUT_BYTES = 200_000;
 const MAX_ENTRIES = 300;
@@ -52,9 +52,24 @@ export default {
       const input = body?.input;
       if (!input || typeof input !== "string") return json({ error: "missing input" }, 400);
       if (input.length > MAX_INPUT_BYTES) return json({ error: "input too large" }, 413);
-      const entries = input.trimStart().startsWith("@") ? parseBib(input) : parseTextRefs(input);
+      const bib = input.trimStart().startsWith("@");
+      const reading = bib ? null : readReferenceList(input);
+      const entries = bib ? parseBib(input) : reading!.entries;
       if (!entries.length) return json({ error: "no reference entries recognized" }, 422);
-      return json({ entries: entries.slice(0, MAX_ENTRIES).map((e) => ({ ...e, raw: e.raw.slice(0, 500) })) });
+      return json({
+        entries: entries.slice(0, MAX_ENTRIES).map((e) => ({ ...e, raw: e.raw.slice(0, 500) })),
+        // What the reader made of the paste, so the page can say when a reference
+        // may have been merged into another or missed.
+        reading: reading && {
+          style: reading.style,
+          parsed: reading.entries.length,
+          expected: reading.expected,
+          // Past the cap, entries are not checked, and the page says so.
+          truncated: entries.length > MAX_ENTRIES ? entries.length : 0,
+          warnings: reading.warnings.slice(0, 40),
+          skipped: reading.skipped.length,
+        },
+      });
     }
 
     if (url.pathname === "/api/audit-entry" && req.method === "POST") {

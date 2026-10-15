@@ -36,10 +36,16 @@ Requires [Bun](https://bun.sh).
 
 ```bash
 bun src/cli.ts --bib refs.bib                 # BibTeX
-bun src/cli.ts --text pasted-references.txt   # plain reference list (APA-shaped)
+bun src/cli.ts --text pasted-references.txt   # plain reference list, any common style
 bun src/cli.ts --docx manuscript.docx         # extracts the References section
 bun src/cli.ts --locate "title or DOI"        # find a local Zotero PDF for a work
 ```
+
+### Reading a pasted list
+
+A plain-text list can be in APA, the AMJ/ASQ/ASR/Organization Science/SMJ style (bare year after the authors, including `2019a`, `in press`, `forthcoming` and `n.d.`), Chicago author-date, Harvard, MLA, or numbered (`[1]` or `1.`, IEEE or Vancouver). Organisations as authors (`B Lab. 2021a.`, `World Economic Forum (2012).`) are read too. RefGuard works out the style first and then splits the text where each reference starts, not at line breaks, so text copied from a PDF (wrapped lines, two references on one line, page headers, margin line numbers, a DOI broken across lines) reads the same as a clean list.
+
+No reference is dropped without a word. RefGuard counts the year markers in the text separately from the splitter. If it read fewer references than that count, or an entry seems to hold two references, the report gives a parse warning and names the entries to check, and the CLI exits 2 (cannot certify). Text that is not a reference (headings, page furniture, tables, author bios) is listed as set aside.
 
 The CLI also consults a local Zotero library when one is present. If a local [Zotero](https://www.zotero.org) library exists (`~/Zotero/zotero.sqlite`, or `--zotero <path>`), entries are also matched against it (read-only) and PDF paths are reported for downstream claim-checking. Set `REFGUARD_MAILTO=you@example.org` to join Crossref's polite pool.
 

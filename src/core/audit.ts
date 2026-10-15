@@ -110,7 +110,10 @@ export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; note
     // The cited year is a real year of this record, but the online-first one. The
     // print year is the published state, so the difference is reported, however
     // many years apart they are; it is still the right record, so it is drift.
-    notes.push(`cited the online-first year (${ey}); the print year is ${truth.printYear}`);
+    // Usually the online year comes first. A handbook chapter can go online after
+    // the printed volume, and calling that year "online-first" would be wrong.
+    const which = ey > truth.printYear ? "online year" : "online-first year";
+    notes.push(`cited the ${which} (${ey}); the print year is ${truth.printYear}`);
     drift = true;
   } else if (ey !== null && tys.length) {
     const nearest = tys.reduce((a, b) => (Math.abs(ey - b) < Math.abs(ey - a) ? b : a));

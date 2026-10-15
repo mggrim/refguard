@@ -8,7 +8,8 @@
  *   refguard --docx manuscript.docx     # extracts the References section
  *   refguard --locate "title or DOI"    # find a local (Zotero) PDF for a work
  *
- * Exit codes: 0 = all pass · 1 = blocking findings · 2 = cannot certify.
+ * Exit codes: 0 = all pass · 1 = blocking findings · 2 = cannot certify (a registry
+ * was unreachable, or the reader may have missed a reference).
  * Set REFGUARD_MAILTO (or OPENALEX_MAILTO) to join Crossref's polite pool.
  */
 import { join } from "node:path";
@@ -25,8 +26,9 @@ import {
   trimDoiTail,
   normDoi,
   parseBib,
-  parseTextRefs,
+  readReferenceList,
   type AuditResult,
+  type ReferenceList,
   type RefEntry,
 } from "./core/index.ts";
 import { ZoteroLibrary } from "./zotero.ts";
@@ -50,11 +52,34 @@ async function extractDocxText(path: string): Promise<string> {
 
 
 
-export function render(results: AuditResult[], label: string): string {
+/**
+ * What the reader made of a pasted list, before any verdict: how many references
+ * it read against how many the text appears to hold, what it set aside, and every
+ * place it may have merged or missed one. A lost reference is never certified,
+ * so this comes first.
+ */
+export function renderReading(reading: ReferenceList): string[] {
+  const lines = [
+    `📖 READ: ${reading.entries.length} references (${reading.style} style); the text appears to hold ${reading.expected}.`,
+  ];
+  if (reading.skipped.length) {
+    lines.push(`   Set aside ${reading.skipped.length} ${reading.skipped.length === 1 ? "passage" : "passages"} that ${reading.skipped.length === 1 ? "is" : "are"} not a reference:`);
+    for (const s of reading.skipped.slice(0, 5)) lines.push(`     "${s.slice(0, 80)}${s.length > 80 ? "…" : ""}"`);
+    if (reading.skipped.length > 5) lines.push(`     and ${reading.skipped.length - 5} more`);
+  }
+  if (reading.warnings.length) {
+    lines.push(`⚠️ PARSE WARNINGS (${reading.warnings.length}): a reference may have been merged into another or missed.`);
+    for (const w of reading.warnings) lines.push(`  - ${w.message}`);
+  }
+  return [...lines, ""];
+}
+
+export function render(results: AuditResult[], label: string, reading?: ReferenceList): string {
   const counts: Record<string, number> = {};
   for (const r of results) counts[r.verdict] = (counts[r.verdict] ?? 0) + 1;
   const lines = [`RefGuard — ${label}`, "=".repeat(60)];
   lines.push(Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(" · "), "");
+  if (reading) lines.push(...renderReading(reading));
   const blocking = results.filter((r) => (BLOCKING_VERDICTS as readonly string[]).includes(r.verdict));
   const review = results.filter((r) =>
     ["BENIGN_DRIFT", "UNVERIFIED", "AMBIGUOUS_MATCH", "REGISTRY_UNREACHABLE"].includes(r.verdict),
@@ -134,6 +159,7 @@ async function main(): Promise<number> {
   }
 
   let entries: RefEntry[] = [];
+  let reading: ReferenceList | undefined;
   let label = "";
   const bibPath = arg("bib");
   const textPath = arg("text");
@@ -142,7 +168,8 @@ async function main(): Promise<number> {
     entries = parseBib(await Bun.file(bibPath).text());
     label = bibPath;
   } else if (textPath) {
-    entries = parseTextRefs(await Bun.file(textPath).text());
+    reading = readReferenceList(await Bun.file(textPath).text());
+    entries = reading.entries;
     label = textPath;
   } else if (docxPath) {
     const docText = await extractDocxText(docxPath);
@@ -153,7 +180,8 @@ async function main(): Promise<number> {
         "      sentences that open with a citation. Check the entries below against the draft.",
       );
     }
-    entries = parseTextRefs(refsSection ?? docText);
+    reading = readReferenceList(refsSection ?? docText);
+    entries = reading.entries;
     label = docxPath;
   } else {
     console.error(
@@ -163,6 +191,7 @@ async function main(): Promise<number> {
   }
   if (!entries.length) {
     console.error("no reference entries parsed from input");
+    if (reading) console.error(renderReading(reading).join("\n"));
     return 2;
   }
   if (!zotero) console.error("note: no Zotero library found; auditing against registry only");
@@ -178,12 +207,18 @@ async function main(): Promise<number> {
 
   const outPath = arg("out");
   if (outPath) {
-    await Bun.write(outPath, JSON.stringify({ label, generated: new Date().toISOString(), results }, null, 2));
+    const parse = reading && {
+      style: reading.style, parsed: reading.entries.length, expected: reading.expected,
+      warnings: reading.warnings, skipped: reading.skipped,
+    };
+    await Bun.write(outPath, JSON.stringify({ label, generated: new Date().toISOString(), parse, results }, null, 2));
   }
-  console.log(render(results, label));
+  console.log(render(results, label, reading));
 
   if (results.some((r) => (BLOCKING_VERDICTS as readonly string[]).includes(r.verdict))) return 1;
-  if (results.some((r) => r.verdict === "REGISTRY_UNREACHABLE")) return 2;
+  // A reference the reader may have missed was never checked, so the list cannot
+  // be certified even when every entry it did read passes.
+  if (results.some((r) => r.verdict === "REGISTRY_UNREACHABLE") || reading?.warnings.length) return 2;
   return 0;
 }
 

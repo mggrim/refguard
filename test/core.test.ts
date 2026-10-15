@@ -287,7 +287,10 @@ test("text entries get readable author-year keys, deduped", () => {
     "Tolbert, P. S. (1983). A different paper published in the very same year by the same author. Some Other Journal, 1(1), 1-9.",
     "(1994). A block with no author segment at all but plenty of length to pass the filter. Journal, 2(2), 2-9.",
   ].join("\n\n"));
-  expect(refs.map((r) => r.key)).toEqual(["tolbert1983", "tolbert1983a", "ref3"]);
+  // A block with a year but no author is not split out as a reference any more:
+  // the same rule admitted table rows such as "Issuer impact reports (2016), …".
+  // It is reported as skipped text instead (see test/reflists.test.ts).
+  expect(refs.map((r) => r.key)).toEqual(["tolbert1983", "tolbert1983a"]);
 });
 
 test("a DOI containing parentheses survives text parsing intact", () => {

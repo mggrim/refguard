@@ -106,8 +106,7 @@ export async function crossrefSearch(
   const data = (await registryGet(url, opts)) as { message?: { items?: CrossrefItem[] } } | null;
 
   const cited = Number(entry.year);
-  const scored = (data?.message?.items ?? []).map((item) => {
-    const t = itemToTruth(item);
+  const scored = (data?.message?.items ?? []).map(itemToTruth).filter((t) => !isReviewOf(entry, t)).map((t) => {
     let score = entry.title ? titleSim(entry.title, t.title) : 0;
     const overlap = authorOverlap(entry.authors, t.authors);
     if (overlap >= 0) score = score * 0.7 + overlap * 0.3;
@@ -135,6 +134,27 @@ export async function crossrefSearch(
  * similarity, so the margin covers both and nothing more.
  */
 const PREPRINT_MARGIN = 0.1;
+
+/**
+ * A review of the cited book carries the book's title, so it scores as a match, and
+ * its author is the reviewer. Two shapes give it away: a title that says so ("Book
+ * Review: …", "Review of …"), and a title that names the cited author when the
+ * record's own authors do not include them ("W. Richard SCOTT (1995), Institutions
+ * and Organizations"). Either way it is a different work about the cited one.
+ */
+export function isReviewOf(entry: RefEntry, t: Truth): boolean {
+  if (/^\s*(?:book\s+reviews?|reviews?\s+of|reviewed\s+works?)\b/i.test(t.title)) return true;
+  const first = entry.authors[0];
+  if (!first || authorOverlap([first], t.authors) === 1) return false;
+  const surname = first.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const title = t.title.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const name = surname.replace(/[^a-z]/g, "");
+  if (name.length < 2) return false;
+  // The name has to open the title as a byline ("Rebecca Henderson: …") or follow
+  // "by", so a title that merely contains the word ("Green consumers …" cited to
+  // Green) is not mistaken for a review.
+  return new RegExp(`^(?:[a-z.]+\\s){0,3}${name}\\s*[:.,(]|\\bby\\s+(?:[a-z.]+\\s){0,2}${name}\\b`).test(title);
+}
 
 /**
  * SSRN deposits its papers as "journal-article" in "SSRN Electronic Journal", so

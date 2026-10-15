@@ -68,4 +68,4 @@ RefGuard adapts an architecture with this lineage: Katie Apker's VerifyClaims pi
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).

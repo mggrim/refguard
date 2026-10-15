@@ -23,6 +23,12 @@ export interface RegistryOptions {
    * first exhausted entry trips the breaker and the rest fail fast and honestly.
    */
   breaker?: Breaker;
+  /**
+   * Cloudflare only: how long the edge may cache a registry answer. The worker
+   * passes it and `registryGet` reads it, but it was never declared here, so the
+   * option type-checked nowhere.
+   */
+  cacheTtlSeconds?: number;
 }
 
 export interface Breaker {

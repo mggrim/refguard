@@ -74,6 +74,7 @@ function itemToTruth(item: CrossrefItem): Truth {
     title: item.title?.[0] ?? "",
     year: year ? String(year) : "",
     years: [...new Set(years)],
+    printYear: print ?? undefined,
     journal: item["container-title"]?.[0] ?? "",
     doi: normDoi(item.DOI ?? ""),
     authors: (item.author ?? [])

@@ -36,6 +36,13 @@ export interface Truth {
    * years, and a citation of either one is a citation of the published state.
    */
   years?: number[];
+  /**
+   * Crossref only: the year the work appeared in print, when it has. The print
+   * year is the published state, so citing the online-first year instead is
+   * reported, though never as an error. A record without one (online-only
+   * journals, books) accepts any of its years.
+   */
+  printYear?: number;
   journal: string;
   doi: string;
   authors: string[];

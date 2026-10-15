@@ -12,7 +12,7 @@
  * years, and reporting the gap as an error is wrong.
  */
 import type { RefEntry, Truth } from "./types.ts";
-import { authorOverlap, titleSim } from "./match.ts";
+import { authorOverlap, knownYears, titleSim } from "./match.ts";
 import { registryGet, SEARCH_ACCEPT, type RegistryOptions, type SearchMatch } from "./registry.ts";
 
 const ENDPOINT = "https://openlibrary.org/search.json";
@@ -82,11 +82,20 @@ export async function openLibrarySearch(
 
   let best: Truth | null = null;
   let bestScore = 0;
+  const cited = Number(entry.year);
   for (const doc of data?.docs ?? []) {
     const t = docToTruth(doc);
     let score = entry.title ? titleSim(entry.title, t.title) : 0;
-    const overlap = authorOverlap(entry.authors, t.authors);
+    // Work records routinely list only the first author, so a matching first author
+    // is all the agreement such a record can offer, the same rule `compare` applies.
+    // Counting the full list instead ranked the 2010 Marshall and Rossman record
+    // above the Marshall-only record that holds the 1995 edition actually cited.
+    const firstAuthor = entry.authors.length > 0 && authorOverlap(entry.authors.slice(0, 1), t.authors) === 1;
+    const overlap = firstAuthor ? 1 : authorOverlap(entry.authors, t.authors);
     if (overlap >= 0) score = score * 0.7 + overlap * 0.3;
+    // With the authors level, the record carrying the cited edition is the one
+    // cited. Same bonus, and same one-year tolerance, as the article search.
+    if (cited && knownYears(t).some((y) => Math.abs(cited - y) <= 1)) score += 0.05;
     if (score > bestScore) {
       bestScore = score;
       best = t;

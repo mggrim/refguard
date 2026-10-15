@@ -50,7 +50,7 @@ async function extractDocxText(path: string): Promise<string> {
 
 
 
-function render(results: AuditResult[], label: string): string {
+export function render(results: AuditResult[], label: string): string {
   const counts: Record<string, number> = {};
   for (const r of results) counts[r.verdict] = (counts[r.verdict] ?? 0) + 1;
   const lines = [`RefGuard — ${label}`, "=".repeat(60)];
@@ -70,7 +70,11 @@ function render(results: AuditResult[], label: string): string {
     const how = MATCH_BASIS_LABEL[r.match_basis] +
       (r.match_confidence !== null ? ` (confidence ${r.match_confidence.toFixed(2)})` : "");
     const who = [
-      r.truth_authors?.slice(0, 4).join(", ") + (r.truth_authors && r.truth_authors.length > 4 ? " et al." : ""),
+      // A record with no authors used to print "undefined" here: null?.slice gives
+      // undefined, and undefined plus a string is the word.
+      r.truth_authors?.length
+        ? r.truth_authors.slice(0, 4).join(", ") + (r.truth_authors.length > 4 ? " et al." : "")
+        : "",
       r.truth_year,
     ].filter(Boolean).join(", ");
     return [
@@ -183,4 +187,5 @@ async function main(): Promise<number> {
   return 0;
 }
 
-main().then((code) => process.exit(code));
+// Only when run, not when imported, so the report can be tested.
+if (import.meta.main) main().then((code) => process.exit(code));

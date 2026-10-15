@@ -809,10 +809,35 @@ describe("the print year is the published state", () => {
     expect(r.truth_year).toBe("2018");
   });
 
-  test("citing the online year of the same paper is consistent too", async () => {
+  test("citing the online year of a paper that has a print year is drift, and says so", async () => {
+    // The print year is the published state. The online year is not wrong, so it
+    // is not blocking, but it is not the published state either.
     const r = await auditEntry({ ...grodal, year: "2017" }, { fetchFn: xrefStub(onlineFirst) });
-    expect(r.verdict).toBe("CONSISTENT");
-    expect(r.notes).toEqual([]);
+    expect(r.verdict).toBe("BENIGN_DRIFT");
+    expect(r.notes).toEqual(["cited the online-first year (2017); the print year is 2018"]);
+  });
+
+  test("an online-first year three years before print is drift, not a record question", async () => {
+    // kirtley2020 and logue2019a: online 2020 and 2019, in print 2023 and 2022.
+    for (const [cited, online, print] of [["2020", 2020, 2023], ["2019", 2019, 2022]] as const) {
+      const item = xref({
+        DOI: undefined, title: ["What is a pivot?"], author: [{ family: "Kirtley" }], "container-title": ["Strategic Management Journal"],
+        issued: { "date-parts": [[online]] }, "published-online": { "date-parts": [[online]] }, "published-print": { "date-parts": [[print]] },
+      });
+      const r = await auditEntry({
+        key: "kirtley", title: "What is a pivot?", authors: ["Kirtley"], year: cited,
+        journal: "Strategic Management Journal", doi: "", raw: "x",
+      }, { fetchFn: xrefStub(item) });
+      expect(r.verdict).toBe("BENIGN_DRIFT");
+      expect(r.notes).toEqual([`cited the online-first year (${online}); the print year is ${print}`]);
+      expect(r.truth_year).toBe(String(print));
+    }
+  });
+
+  test("a record with no print year accepts any year it carries", () => {
+    // Online-only journals and books have no print year to prefer.
+    const t: Truth = { ...truth, year: "1999", years: [1998, 1999] };
+    expect(compare(entry({ year: "1998" }), t)).toEqual({ verdict: "CONSISTENT", notes: [] });
   });
 
   test("a one-year gap that neither date explains is still drift, measured from the nearest year", async () => {
@@ -845,6 +870,44 @@ describe("the print year is the published state", () => {
     });
     expect(r.verdict).toBe("CONSISTENT");
     expect(r.notes).toEqual([]);
+  });
+});
+
+describe("Open Library ranking", () => {
+  test("a record listing only the first author competes on equal terms, and the cited edition decides", async () => {
+    // marshall1995: Open Library holds two work records for the book. The one with
+    // both authors is the 2010 edition; the one listing only Marshall carries the
+    // 1995 edition that was cited. Counting only full author lists picked 2010.
+    const docs = [
+      { title: "Designing Qualitative Research", author_name: ["Catherine Marshall", "Gretchen B. Rossman"],
+        first_publish_year: 2010, publish_year: [2010, 2021, 2014, 2015], edition_count: 4, key: "/works/OL21092718W" },
+      { title: "Designing qualitative research", author_name: ["Catherine Marshall"],
+        first_publish_year: 1989, publish_year: [1995, 1989, 2006, 1999], edition_count: 5, key: "/works/OL1964270W" },
+    ];
+    const fetchFn = (async (url: string) =>
+      String(url).includes("openlibrary.org")
+        ? new Response(JSON.stringify({ docs }), { status: 200 })
+        : new Response(JSON.stringify({ message: { items: [] } }), { status: 200 })) as unknown as typeof fetch;
+    const r = await auditEntry({
+      key: "marshall1995", title: "Designing Qualitative Research", authors: ["Marshall", "Rossman"], year: "1995",
+      journal: "", doi: "", raw: "Marshall, C., & Rossman, G. B. 1995. Designing qualitative research. Thousand Oaks, CA: Sage.",
+    }, { fetchFn });
+    expect(r.truth_id).toBe("https://openlibrary.org/works/OL1964270W");
+    expect(r.verdict).toBe("CONSISTENT");
+  });
+});
+
+describe("the CLI report", () => {
+  test("a record with no authors prints no 'undefined'", async () => {
+    const { render } = await import("../src/cli.ts");
+    const out = render([{
+      key: "lamy2021", title: "The Next Ten Years of Impact Investment", year: "2021", verdict: "AMBIGUOUS_MATCH",
+      notes: ["x"], truth_source: "crossref", truth_title: "Uniqlo: the next ten years", match_basis: "search",
+      kind: "unknown", match_confidence: 0.75, truth_authors: null, truth_year: "2024",
+      truth_doi: "10.1093/x", truth_id: null, local_id: null, local_pdf: null,
+    }], "t");
+    expect(out).not.toContain("undefined");
+    expect(out).toContain('record: "Uniqlo: the next ten years" — 2024');
   });
 });
 

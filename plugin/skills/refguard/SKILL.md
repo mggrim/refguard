@@ -28,7 +28,7 @@ Independence contract: verifier agents NEVER receive the manuscript, sibling cla
 
 ## Gotchas
 
-- An article's print, online and issue years all count: citing any of them is CONSISTENT. A one-year gap none of them explains is BENIGN_DRIFT. A gap of two or more blocks on a DOI match and is AMBIGUOUS_MATCH on a search match, because there it is a question about which record or edition was cited. A book matches any year one of its editions carries.
+- The print year is the published state. Citing it is CONSISTENT; citing the online-first year of a paper that has a print year is BENIGN_DRIFT, with both years in the note. A record with no print year accepts any year it carries. A one-year gap none of its years explains is BENIGN_DRIFT. A gap of two or more blocks on a DOI match and is AMBIGUOUS_MATCH on a search match, because there it is a question about which record or edition was cited. A book matches any year one of its editions carries.
 - A search that returned only a different work (title similarity below 0.55) is UNVERIFIED, never INCONSISTENT: it says nothing about the reference.
 - A DOI missing from Crossref is not fabrication by itself (DataCite and other agencies register DOIs too); the audit cross-checks doi.org handles before saying FABRICATED_CANDIDATE.
 - WRONG_PAPER and UNSUPPORTED overlap at the boundary; both are blocking, so verifier disagreement between them is harmless.

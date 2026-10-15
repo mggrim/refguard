@@ -13,13 +13,13 @@
     FABRICATED_CANDIDATE: 'the DOI is registered nowhere; 404 at both Crossref and doi.org',
     INCONSISTENT: 'the paper exists but a field does not belong to it',
     RETRACTED: 'the registry marks this work retracted',
-    BENIGN_DRIFT: 'a year one off that neither the print nor the online date explains, a changed subtitle, or an incomplete author list',
+    BENIGN_DRIFT: 'the online-first year cited where a print year exists, a year one off that neither date explains, a changed subtitle, or an incomplete author list',
     UNVERIFIED: 'no registry confirmed it; not proof of fabrication',
     AMBIGUOUS_MATCH: 'a record was found but may be a different work or edition; the reference may be fine',
     REGISTRY_UNREACHABLE: 'a registry could not be reached, so nothing can be certified',
     CONSISTENT: 'every field matches the registry record',
   };
-  const BASIS = { doi: 'Matched by DOI', search: 'Matched by reference search', local: 'Matched in your local library' };
+  const BASIS = { doi: 'Matched by DOI', search: 'Matched by reference search', book: 'Matched in Open Library', local: 'Matched in your local library' };
   const tier = (v) => TIER[v] ?? 'r';          // fail closed: an unknown verdict goes to review
   const form = $('audit'), input = $('input'), go = $('go'), status = $('status'), bar = $('bar'), empty = $('empty'), cert = $('cert');
   const groups = { b:$('g-b'), r:$('g-r'), p:$('g-p') };

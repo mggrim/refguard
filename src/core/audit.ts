@@ -106,7 +106,13 @@ export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; note
   // a gap is measured from the nearest one.
   const ey = /^\d{4}$/.test(entry.year) && Number(entry.year) > 1000 ? Number(entry.year) : null;
   const tys = knownYears(truth);
-  if (ey !== null && tys.length) {
+  if (ey !== null && truth.printYear && ey !== truth.printYear && tys.includes(ey)) {
+    // The cited year is a real year of this record, but the online-first one. The
+    // print year is the published state, so the difference is reported, however
+    // many years apart they are; it is still the right record, so it is drift.
+    notes.push(`cited the online-first year (${ey}); the print year is ${truth.printYear}`);
+    drift = true;
+  } else if (ey !== null && tys.length) {
     const nearest = tys.reduce((a, b) => (Math.abs(ey - b) < Math.abs(ey - a) ? b : a));
     const dy = Math.abs(ey - nearest);
     // With only one year on the record the gap may still be online-first against

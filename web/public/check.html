@@ -61,16 +61,18 @@
     <div class="ledger" aria-live="polite">
       <div class="ledger-head">
         <h2>Results</h2>
-        <div class="tally" id="tally"><span class="b"><b>0</b> blocking</span><span class="r"><b>0</b> review</span><span class="p"><b>0</b> consistent</span></div>
+        <div class="tally" id="tally"><span class="b"><b>0</b> fix this</span><span class="r"><b>0</b> worth a look</span><span class="p"><b>0</b> consistent</span></div>
       </div>
       <div class="progress"><i id="bar"></i></div>
       <div class="status" id="status"></div>
       <p class="empty" id="empty">Paste a bibliography to begin. Each verdict appears as soon as the registry answers.</p>
       <div class="coverage" id="reading" role="status" hidden></div>
-      <div class="group b" id="g-b" hidden><h3>Blocking</h3><div class="rows"></div></div>
-      <p class="coverage" id="coverage" hidden></p>
-      <div class="group r" id="g-r" hidden><h3>Review by hand</h3><div class="rows"></div></div>
-      <div class="group p" id="g-p" hidden><h3>Consistent</h3><div class="rows"></div></div>
+      <p class="summary" id="summary" hidden></p>
+      <div class="group b" id="g-fix" hidden><h3>Fix this</h3><div class="rows"></div></div>
+      <div class="group r" id="g-look" hidden><h3>Worth a look</h3><div class="rows"></div></div>
+      <details class="group q fold" id="g-fine" hidden><summary><h3>Probably fine <span class="count"></span></h3></summary><p class="fold-note">Differences of record, not of reference: editions, reprints, print and online years, subtitles.</p><div class="rows"></div></details>
+      <details class="group q fold" id="g-cant" hidden><summary><h3>Can't check here <span class="count"></span></h3></summary><p class="fold-note">Sources no registry indexes, and references the registries do not hold. Not finding one is not evidence of a problem.</p><div class="rows"></div></details>
+      <details class="group p fold" id="g-p" hidden><summary><h3>Consistent <span class="count"></span></h3></summary><div class="rows"></div></details>
       <div class="cert" id="cert">
         <div class="big" id="cert-stamp"></div>
         <div>
@@ -81,6 +83,8 @@
       </div>
 
       <div class="glossary-inline" id="glossary" hidden>
+        <h3>Four levels of attention</h3>
+        <p>Results are grouped by whether they need your time. <b>Fix this</b>: likely a real error, such as fields from two different papers or a retracted work. <b>Worth a look</b>: a real difference you may want to change, such as citing the online-first year of a paper that now has a volume and issue. <b>Probably fine</b>: a difference of record rather than of reference, such as a reprint, a later edition or a handbook chapter's print and online years. <b>Can't check here</b>: a source no registry indexes, or one the registries do not hold; not finding it is not evidence of a problem.</p>
         <h3>Eight verdicts in three tiers</h3>
         <p>Fail-closed means an uncertain reference is sent back to you rather than passed. Nothing the registries do not recognise ever passes.</p>
         <dl>

@@ -22,7 +22,10 @@
   const BASIS = { doi: 'Matched by DOI', search: 'Matched by reference search', book: 'Matched in Open Library', local: 'Matched in your local library' };
   const tier = (v) => TIER[v] ?? 'r';          // fail closed: an unknown verdict goes to review
   const form = $('audit'), input = $('input'), go = $('go'), status = $('status'), bar = $('bar'), empty = $('empty'), cert = $('cert');
-  const groups = { b:$('g-b'), r:$('g-r'), p:$('g-p') };
+  // Results are grouped by whether they deserve the author's time, not by verdict.
+  // The two quiet groups start folded and show only their counts.
+  const groups = { fix:$('g-fix'), look:$('g-look'), fine:$('g-fine'), cant:$('g-cant'), ok:$('g-p') };
+  const levelOf = (r) => r.verdict === 'CONSISTENT' ? 'ok' : (r.attention && r.attention.level) || (tier(r.verdict) === 'b' ? 'fix' : 'fine');
   let results = [], running = false, reading = null;
 
   const updateCount = () => {
@@ -63,7 +66,7 @@
     const lines = [
       `RefGuard reference report`,
       `${stamp} UTC · ${location.origin}`,
-      `${results.length} entries · ${c.b} blocking · ${c.r} to review · ${c.p} consistent`,
+      `${results.length} entries · ${c.fix} fix this · ${c.look} worth a look · ${c.fine} probably fine · ${c.cant} can't check here · ${c.ok} consistent`,
       `Checked against Crossref, Open Library and the doi.org handle registry. No AI is used in this audit.`,
       '',
     ];
@@ -73,16 +76,19 @@
       lines.push(heading, '-'.repeat(heading.length), ...notes.map((n) => `  ${n}`), '');
     }
     const groupsOut = [
-      ['b', 'BLOCKING — fix or remove before submitting'],
-      ['r', 'REVIEW BY HAND — not errors, but not settled either'],
-      ['p', 'CONSISTENT — every field matches the registry record'],
+      ['fix', 'FIX THIS: likely a real error in the reference'],
+      ['look', 'WORTH A LOOK: a real difference you may want to change'],
+      ['fine', 'PROBABLY FINE: a difference of record, not of reference'],
+      ['cant', "CAN'T CHECK HERE: outside the registries or not found, which is not evidence of a problem"],
+      ['ok', 'CONSISTENT: every field matches the registry record'],
     ];
     for (const [k, heading] of groupsOut) {
-      const rows = results.filter((r) => tier(r.verdict) === k);
+      const rows = results.filter((r) => levelOf(r) === k);
       if (!rows.length) continue;
       lines.push(heading, '-'.repeat(heading.length), '');
       for (const r of rows) {
         lines.push(`[${LABEL[r.verdict] ?? r.verdict}]  ${r.key}`);
+        if (r.attention && r.attention.reason) lines.push(`  in short : ${r.attention.reason}`);
         if (r.title) lines.push(`  cited as : ${r.title}${r.year ? ` (${r.year})` : ''}`);
         if (r.truth_title) {
           const who = (r.truth_authors || []).slice(0, 4).join(', ') + ((r.truth_authors || []).length > 4 ? ' et al.' : '');
@@ -128,8 +134,8 @@
     status.textContent = '';
     status.className = 'status';
     bar.style.width = '0';
-    for (const g of Object.values(groups)) { g.hidden = true; g.querySelector('.rows').innerHTML = ''; }
-    $('coverage').hidden = true;
+    for (const g of Object.values(groups)) { g.hidden = true; g.open = false; g.querySelector('.rows').innerHTML = ''; }
+    $('summary').hidden = true;
     $('reading').hidden = true;
     reading = null;
     renderTally();
@@ -157,20 +163,30 @@
     box.hidden = false;
   }
 
-  function tally(){ const c = { b:0, r:0, p:0 }; for (const r of results) c[tier(r.verdict)]++; return c; }
+  function tally(){ const c = { fix:0, look:0, fine:0, cant:0, ok:0 }; for (const r of results) c[levelOf(r)]++; return c; }
 
   function renderTally(){
     const c = tally(), t = $('tally');
-    t.querySelector('.b b').textContent = c.b;
-    t.querySelector('.r b').textContent = c.r;
-    t.querySelector('.p b').textContent = c.p;
+    t.querySelector('.b b').textContent = c.fix;
+    t.querySelector('.r b').textContent = c.look;
+    t.querySelector('.p b').textContent = c.ok;
+    for (const k of ['fine', 'cant', 'ok']) {
+      const count = groups[k].querySelector('.count');
+      if (count) count.textContent = c[k] ? `(${c[k]})` : '';
+    }
+    const need = c.fix + c.look, sum = $('summary');
+    if (results.length) {
+      sum.innerHTML = `<b>${need ? `${need} of ${results.length} ${need === 1 ? 'needs' : 'need'} your attention.` : 'Nothing needs your attention.'}</b> ` +
+        `${c.fine} probably fine, ${c.cant} could not be checked here, ${c.ok} consistent.`;
+      sum.hidden = false;
+    }
   }
 
   const esc = (s) => { const d = document.createElement('span'); d.textContent = String(s ?? ''); return d.innerHTML; };
 
   function addRow(r){
     results.push(r);
-    const k = tier(r.verdict), g = groups[k];
+    const k = tier(r.verdict), g = groups[levelOf(r)];
     g.hidden = false;
     empty.hidden = true;
     const notes = (r.notes || []).filter(Boolean);
@@ -201,36 +217,25 @@
           (who || ident ? `<span class="who">${who}${who && ident ? ' · ' : ''}${ident}</span>` : '') +
           `</div>`
         : '') +
+      (r.attention && r.attention.reason ? `<div class="why">${esc(r.attention.reason)}</div>` : '') +
       (notes.length ? `<div class="n"><span class="lbl">Notes</span>${esc(notes.join(' · '))}</div>` : '') +
       `</div>`;
     g.querySelector('.rows').appendChild(row);
     renderTally();
   }
 
-  // Name what the registry does not index, instead of repeating "could be
-  // fabricated" over a pile of books and reports.
-  function renderCoverage(){
-    const out = results.filter((r) => r.verdict === 'UNVERIFIED' && COVERED[r.kind] === false);
-    const box = $('coverage');
-    if (!out.length) { box.hidden = true; return; }
-    const counts = {};
-    for (const r of out) counts[r.kind] = (counts[r.kind] || 0) + 1;
-    const parts = Object.entries(counts).map(([k, n]) => `${n} ${n === 1 ? (KIND[k] || k) : (KIND_PLURAL[k] || k)}`);
-    box.innerHTML = `<b>${out.length} of these ${out.length === 1 ? "is" : "are"} outside the registry:</b> ${esc(parts.join(', '))}. ` +
-      `The registries index journal articles and books, so a miss here says nothing about the reference itself. Check them by hand.`;
-    box.hidden = false;
-  }
-
   function certify(){
     const c = tally(), n = results.length;
     let k, stamp, text;
-    if (c.b) {
+    if (c.fix) {
       k = 'b'; stamp = 'Cannot certify';
-      text = `<b>${c.b} of ${n} entries</b> ${c.b === 1 ? "has a blocking verdict" : "have blocking verdicts"}. Fix or remove ${c.b === 1 ? "it" : "them"} before you submit` +
-             (c.r ? `, and check the ${c.r} in review by hand.` : '.');
-    } else if (c.r) {
+      text = `<b>${c.fix} of ${n} entries</b> ${c.fix === 1 ? "looks like a real error" : "look like real errors"}. Fix or remove ${c.fix === 1 ? "it" : "them"} before you submit` +
+             (c.look ? `, and look at the ${c.look} marked worth a look.` : '.');
+    } else if (c.look || c.fine || c.cant) {
       k = 'r'; stamp = 'Certified with reservations';
-      text = `No entry has a blocking verdict, but the registry could not settle <b>${c.r} of ${n}</b>. Check those by hand.`;
+      text = `Nothing looks like an error. ` +
+        (c.look ? `<b>${c.look} ${c.look === 1 ? "is" : "are"} worth a look</b>, ` : '') +
+        `${c.fine} ${c.fine === 1 ? "is" : "are"} probably fine, and ${c.cant} could not be checked here.`;
     } else if (readingNotes().length) {
       k = 'r'; stamp = 'Certified with reservations';
       text = `Every entry that was read matches the scholarly record, but the reader may have missed a reference. Check the places named above.`;
@@ -270,7 +275,6 @@
       bar.style.width = '100%';
       const set = reading && reading.skipped ? ` ${reading.skipped} ${reading.skipped === 1 ? 'passage that is' : 'passages that are'} not a reference ${reading.skipped === 1 ? 'was' : 'were'} set aside.` : '';
       status.textContent = `${entries.length} entries checked.${set}`;
-      renderCoverage();
       certify();
     } catch (err) {
       status.textContent = `The registry could not be reached, so nothing can be certified. ${err}`;

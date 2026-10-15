@@ -28,6 +28,9 @@ Independence contract: verifier agents NEVER receive the manuscript, sibling cla
 
 ## Gotchas
 
+- Read the attention level before the verdict. "Fix this" is a likely error; "Worth a look" is a real difference the author may want to change (an online-first year where a version of record exists, a citation made before publication); "Probably fine" is a difference of record (edition, reprint, print and online years); "Can't check here" means outside the registries or not found, which is not evidence of a problem.
+- Web pages, trade press, reports, cases and theses are not searched. A search result sharing no author with the reference is reported as not found, unless a distinctive journal title matches exactly, which is field mixing and blocks.
+
 - The print year is the published state. Citing it is CONSISTENT; citing the online-first year of a paper that has a print year is BENIGN_DRIFT, with both years in the note. A record with no print year accepts any year it carries. A one-year gap none of its years explains is BENIGN_DRIFT. A gap of two or more blocks on a DOI match and is AMBIGUOUS_MATCH on a search match, because there it is a question about which record or edition was cited. A book matches any year one of its editions carries.
 - A search that returned only a different work (title similarity below 0.55) is UNVERIFIED, never INCONSISTENT: it says nothing about the reference.
 - A DOI missing from Crossref is not fabrication by itself (DataCite and other agencies register DOIs too); the audit cross-checks doi.org handles before saying FABRICATED_CANDIDATE.

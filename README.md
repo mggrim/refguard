@@ -15,6 +15,19 @@ No AI is involved in the audit — it is pure registry lookup and field comparis
 
 The print year is the published state. RefGuard reads the print, online and issue dates from Crossref: citing the print year is consistent, and citing the online-first year of a paper that has since appeared in print is reported as benign drift with both years named. A record with no print year (an online-only journal, a book) matches any year it carries. A year gap of two or more on a record found by DOI is blocking. On a record found by search it is a question about which record or edition you cited, so it goes to review as an ambiguous match. A search that returns only a different work (title similarity below 0.55) is reported as unverified, because it is no evidence about your reference either way. Where Crossref holds both a preprint (SSRN or other posted content) and the journal article, the journal record is used.
 
+## What deserves your attention
+
+A verdict says what the comparison found. Each result that is not `CONSISTENT` also carries an attention level and a one-line reason, worked out by fixed rules, so the report leads with what is worth your time:
+
+| Level | When |
+|---|---|
+| Fix this | A blocking verdict: a DOI registered nowhere, a retracted work, or fields that belong to another paper |
+| Worth a look | You cited the online-first year and a version of record now exists (both years and the volume are named), you cited a paper before it was published and it now is, or the year is one off on a strong match and nothing explains it |
+| Probably fine | A difference of record, not of reference: a reprint, an earlier or later edition, a handbook chapter online after its printed volume, a changed subtitle, a partly different author list |
+| Can't check here | A source no registry indexes (web pages, trade press, reports, teaching cases, theses), or a reference the registries do not hold. Not finding it is not evidence of a problem |
+
+Sources no registry indexes are not searched at all, and a search result with no author in common is not shown as a candidate: both only ever produced someone else's record. The CLI groups its report by level, the JSON output has `attention: {level, reason}` on each result, and the site folds the two quiet levels to a count.
+
 ## Fail-closed by design
 
 A network failure is `REGISTRY_UNREACHABLE` (exit 2, "cannot certify") — never a fabrication verdict and never a silent pass. `FABRICATED_CANDIDATE` requires positive evidence: a 404 at **both** Crossref and doi.org. Anything unrecognized routes to review, never to passing.

@@ -756,9 +756,11 @@ export function referenceKind(raw: string): RefKind {
   if (/\b(working paper|technical report|white ?paper|policy brief|research report)\b/i.test(s)) return "report";
   // Teaching cases: "Harvard Business School Case, 411047", "HBS No. 9-415-080".
   if (/\b(?:Business School|HBS|Ivey)\b[^.]*\b(?:Case|No\.)|\bcase (?:no\.|number|study no\.)/i.test(s)) return "report";
-  // "Place: Publisher" with no serial numbering is a monograph.
-  // "Place: Publisher", optionally with a US state ("Thousand Oaks, CA: Sage").
-  if (/[.,]\s*[A-Z][A-Za-z.\-' ]{2,30}(?:,\s*[A-Z]{2})?:\s*[A-Z]/.test(s) || /\(\s*Vol\.?\s*\d+/i.test(s) || /\b\d(?:st|nd|rd|th)\s+ed(?:ition|\.)/i.test(s)) return "book";
+  // "Place: Publisher" with no serial numbering is a monograph, optionally with a
+  // US state ("Thousand Oaks, CA: Sage"). It has to END the reference: unanchored,
+  // every title with a subtitle ("Values work: A process study ...") read as a
+  // book, which sent journal articles to the book index first.
+  if (/[.,]\s*[A-Z][A-Za-z.\-' ]{2,30}(?:,\s*[A-Z]{2})?:\s*[A-Z][^.:]{1,60}\.?\s*$/.test(s) || /\(\s*Vol\.?\s*\d+/i.test(s) || /\b\d(?:st|nd|rd|th)\s+ed(?:ition|\.)/i.test(s)) return "book";
   // A reference that ends on a publisher's name, with no volume or pages, is a
   // book: "Henderson, R. 2020. Reimagining Capitalism in a World on Fire. Penguin UK."
   if (/[.,]\s*(?:[\p{Lu}][\p{L}&'’\-]*\s){0,4}(?:Press|UP|Publishing|Publishers|Books|Penguin(?: UK)?|Wiley|Springer|Sage|Routledge|Elgar|Macmillan|Palgrave|McGraw-Hill|Jossey-Bass|Berrett-Koehler|Emerald(?: [\p{L} ]+)?|Free Press|Basic Books)\b[^.]*\.?\s*$/u.test(s) &&

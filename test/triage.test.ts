@@ -44,6 +44,42 @@ describe("sources no registry indexes are not searched", () => {
     expect(r.attention?.reason).toContain("web page");
   });
 
+  test("a title with a subtitle is not mistaken for a book's place and publisher", () => {
+    expect(referenceKind("Logue, D., & Grimes, M. 2019. Platforms for the people: Enabling civic crowdfunding through the cultivation of institutional infrastructure. Strategic Management Journal, 1–31.")).not.toBe("book");
+    expect(referenceKind("Gehman, J., Treviño, L. K., & Garud, R. 2013. Values work: A process study of the emergence and performance of organizational values practices. Academy of Management Journal, 56: 84–112.")).not.toBe("book");
+    expect(referenceKind("Weick, K. E. 1995. Sensemaking in organizations. Thousand Oaks, CA: Sage.")).toBe("book");
+  });
+
+  test("a short record title inside a long cited one, by other authors, is not field mixing", async () => {
+    const { fetchFn } = registry([crossrefItem({ title: ["Benefit Corporation Legislation"], author: [{ family: "Resor" }], issued: { "date-parts": [[2012]] } })]);
+    const r = await auditEntry(ref({
+      key: "asmus2017", title: "Finding the benefit in a new administration: A uniform B Corporation legislation notes", authors: ["Asmus"], year: "2017",
+      raw: "Asmus, K. 2017. Finding the benefit in a new administration: A uniform B Corporation legislation notes. Journal of Corporation Law, 43(2): 375–394.",
+    }), { fetchFn });
+    expect(r.verdict).toBe("UNVERIFIED");
+    expect(r.attention?.level).toBe("cant");
+  });
+
+  test("a record listing no authors does not confirm a reference that names some", async () => {
+    const { fetchFn } = registry([crossrefItem({ title: ["Corporations: Exercise of Eminent Domain by Domestic Corporation for Benefit of Foreign Corporation"], author: [], issued: { "date-parts": [[1930]] } })]);
+    const r = await auditEntry(ref({
+      key: "khatib2015", title: "The harms of the benefit corporation", authors: ["Khatib"], year: "2015",
+      raw: "El Khatib, K. 2015. The harms of the benefit corporation. American University Law Review, 65(1): 151–190.",
+    }), { fetchFn });
+    expect(r.verdict).toBe("UNVERIFIED");
+  });
+
+  test("a chapter deposited without authors still matches when its title matches outright", async () => {
+    const { fetchFn } = registry([crossrefItem({ DOI: "10.4337/9781839105340.00034", type: "book-chapter", author: [],
+      title: ["Becoming a generalized specialist: A strategic model for increasing your organization’s SDG impact while minimizing externalities"],
+      issued: { "date-parts": [[2022]] }, "container-title": ["Handbook"] })]);
+    const r = await auditEntry(ref({
+      key: "park2022", title: "Becoming a Generalized Specialist: A Strategic Model for Increasing Your Organization’s SDG Impact While Minimizing Externalities",
+      authors: ["Park", "Grimes", "Gehman"], year: "2022", raw: "x",
+    }), { fetchFn });
+    expect(r.verdict).toBe("CONSISTENT");
+  });
+
   test("a teaching case is a report", () => {
     expect(referenceKind("Marquis, C., Klaber, A., & Thomason, B. 2010. B Lab: Building a new sector of the economy. Harvard Business School Case, 411047.")).toBe("report");
   });

@@ -381,9 +381,19 @@ async function auditOne(entry: RefEntry, opts: AuditOptions, seen: { truth: Trut
     // namesake) and showing it as a candidate was noise. The one exception is
     // field mixing: a distinctive journal-article title that matches exactly, whose
     // authors are someone else's, is the error this tool exists to catch.
-    if ((basis === "search" || basis === "book") && authorOverlap(entry.authors, truth.authors) === 0) {
-      const sim = entry.title && truth.title ? titleSim(entry.title, truth.title) : 0;
-      const mixing = sim >= 0.9 && titleDistinctiveness(entry.title) >= GENERIC_TITLE_TOKENS && base.kind === "journal";
+    // A record that lists no authors at all confirms nothing either, unless its
+    // title matches outright: publishers often deposit book chapters without
+    // authors (Park, Grimes & Gehman 2022 in an Elgar handbook), while the 1930
+    // note that matched "The harms of the benefit corporation" shared only words.
+    const searchSim = entry.title && truth.title ? titleSim(entry.title, truth.title) : 0;
+    const noSharedAuthor = entry.authors.length > 0 &&
+      (authorOverlap(entry.authors, truth.authors) === 0 || (truth.authors.length === 0 && searchSim < 0.9));
+    if ((basis === "search" || basis === "book") && noSharedAuthor) {
+      const sim = searchSim;
+      // Both titles must be distinctive: containment credit lets a short record
+      // title ("Benefit Corporation Legislation") score 1.0 inside a long one.
+      const mixing = sim >= 0.9 && base.kind === "journal" &&
+        titleDistinctiveness(entry.title) >= GENERIC_TITLE_TOKENS && titleDistinctiveness(truth.title) >= GENERIC_TITLE_TOKENS;
       if (!mixing) {
         return {
           ...base,

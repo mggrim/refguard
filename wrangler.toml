@@ -2,6 +2,11 @@ name = "refguard"
 main = "web/worker.ts"
 compatibility_date = "2026-08-01"
 
+# The public address. Cloudflare creates the DNS record for a custom domain.
+# workers.dev stays on so links already shared keep working.
+routes = [{ pattern = "refguard.matthewgrim.es", custom_domain = true }]
+workers_dev = true
+
 [assets]
 directory = "web/public"
 binding = "ASSETS"

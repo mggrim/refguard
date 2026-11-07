@@ -46,14 +46,19 @@ export function attentionFor(entry: RefEntry, kind: RefKind, r: AuditResult, tru
     case "CONSISTENT":
       return null;
     case "FABRICATED_CANDIDATE":
-      return { level: "fix", reason: "The DOI is unregistered, so the reference is unfindable as cited." };
+      return {
+        level: "fix",
+        reason: r.notes[0]?.startsWith("arXiv")
+          ? "The arXiv ID is unregistered, so the reference is unfindable as cited."
+          : "The DOI is unregistered, so the reference is unfindable as cited.",
+      };
     case "RETRACTED":
       return { level: "fix", reason: "The work has been retracted. Cite it only to discuss the retraction." };
     case "INCONSISTENT":
       return {
         level: "fix",
-        reason: r.match_basis === "doi"
-          ? `The record at this DOI disagrees with the reference: ${r.notes[0] ?? "a field does not match"}.`
+        reason: r.match_basis === "doi" || r.match_basis === "arxiv"
+          ? `The record at this ${r.match_basis === "arxiv" ? "arXiv ID" : "DOI"} disagrees with the reference: ${r.notes[0] ?? "a field does not match"}.`
           : `RefGuard identified this work from the title, but other fields belong to a different work: ${r.notes.find((n) => !n.startsWith("title")) ?? r.notes[0] ?? "a field does not match"}.`,
       };
     case "REGISTRY_UNREACHABLE":

@@ -4,5 +4,6 @@ export * from "./parse.ts";
 export * from "./registry.ts";
 export * from "./crossref.ts";
 export * from "./openlibrary.ts";
+export * from "./datacite.ts";
 export * from "./audit.ts";
 export * from "./attention.ts";

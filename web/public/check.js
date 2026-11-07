@@ -6,9 +6,9 @@
   const $ = (id) => document.getElementById(id);
   const TIER = { FABRICATED_CANDIDATE:'b', INCONSISTENT:'b', RETRACTED:'b', BENIGN_DRIFT:'r', UNVERIFIED:'r', AMBIGUOUS_MATCH:'r', REGISTRY_UNREACHABLE:'r', CONSISTENT:'p' };
   const LABEL = { FABRICATED_CANDIDATE:'Fabricated candidate', INCONSISTENT:'Inconsistent', RETRACTED:'Retracted', BENIGN_DRIFT:'Benign drift', UNVERIFIED:'Unverified', AMBIGUOUS_MATCH:'Ambiguous match', REGISTRY_UNREACHABLE:'Registry unreachable', CONSISTENT:'Consistent' };
-  const KIND = { journal:'journal article', chapter:'book chapter', book:'book', thesis:'thesis or dissertation', report:'report or working paper', web:'web page or trade press', unknown:'unrecognized type' };
-  const KIND_PLURAL = { journal:'journal articles', chapter:'book chapters', book:'books', thesis:'theses and dissertations', report:'reports and working papers', web:'web pages and trade press', unknown:'unrecognized types' };
-  const COVERED = { journal:true, chapter:false, book:false, thesis:false, report:false, web:false, unknown:true };
+  const KIND = { journal:'journal article', preprint:'preprint', chapter:'book chapter', book:'book', thesis:'thesis or dissertation', report:'report or working paper', web:'web page or trade press', unknown:'unrecognized type' };
+  const KIND_PLURAL = { journal:'journal articles', preprint:'preprints', chapter:'book chapters', book:'books', thesis:'theses and dissertations', report:'reports and working papers', web:'web pages and trade press', unknown:'unrecognized types' };
+  const COVERED = { journal:true, preprint:true, chapter:false, book:false, thesis:false, report:false, web:false, unknown:true };
   const MEANING = {
     FABRICATED_CANDIDATE: 'the DOI is unregistered; 404 at both Crossref and doi.org',
     INCONSISTENT: 'the paper exists, but a cited field conflicts with its record',
@@ -19,7 +19,7 @@
     REGISTRY_UNREACHABLE: 'a registry was unreachable, so RefGuard withholds certification',
     CONSISTENT: 'the cited fields all match the registry record',
   };
-  const BASIS = { doi: 'Matched by DOI', search: 'Matched by reference search', book: 'Matched in Open Library', local: 'Matched in your local library' };
+  const BASIS = { doi: 'Matched by DOI', arxiv: 'Matched by arXiv ID', search: 'Matched by reference search', book: 'Matched in Open Library', local: 'Matched in your local library' };
   const tier = (v) => TIER[v] ?? 'r';          // fail closed: an unknown verdict goes to review
   const form = $('audit'), input = $('input'), go = $('go'), status = $('status'), bar = $('bar'), empty = $('empty'), cert = $('cert');
   // Results are grouped by whether they deserve the author's time, not by verdict.

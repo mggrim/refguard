@@ -26,7 +26,7 @@ export interface RefEntry {
 }
 
 export interface Truth {
-  source: "crossref" | "openlibrary" | "local";
+  source: "crossref" | "openlibrary" | "datacite" | "local";
   title: string;
   /** The year to report: the print year where the registry knows it. */
   year: string;
@@ -51,7 +51,7 @@ export interface Truth {
   /** Open Library only: how many printings this work has. A multi-edition work has
    * several correct years, which is why an edition gap is not a mismatch. */
   editions?: number;
-  /** Crossref only: the publisher's own work type ("journal-article", "book"). */
+  /** The registry's own work type: Crossref's "journal-article" or "book", DataCite's "preprint". */
   type?: string;
   /** Crossref only: volume and issue, so a report can name the version of record. */
   volume?: string;
@@ -92,11 +92,12 @@ export interface AuditResult {
 import type { RefKind } from "./parse.ts";
 import type { Attention } from "./attention.ts";
 
-export type MatchBasis = "doi" | "search" | "book" | "local";
+export type MatchBasis = "doi" | "arxiv" | "search" | "book" | "local";
 
 
 export const MATCH_BASIS_LABEL: Record<MatchBasis, string> = {
   doi: "matched by DOI",
+  arxiv: "matched by arXiv ID",
   search: "matched by reference search",
   book: "matched in Open Library",
   local: "matched in your local library",

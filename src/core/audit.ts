@@ -4,6 +4,7 @@ import type { SearchMatch } from "./registry.ts";
 import { REF_KIND_LABEL, REGISTRY_COVERS, referenceKind } from "./parse.ts";
 import { openLibrarySearch } from "./openlibrary.ts";
 import { crossrefByDoi, crossrefSearch } from "./crossref.ts";
+import { ARXIV_DOI_PREFIX, arxivDoi, arxivId, dataciteByDoi } from "./datacite.ts";
 import { authorOverlap, GENERIC_TITLE_TOKENS, journalMatch, knownYears, titleDistinctiveness, titleSim } from "./match.ts";
 import { attentionFor } from "./attention.ts";
 import { doiHandleExists, newBreaker, RegistryUnreachable, type RegistryOptions } from "./registry.ts";
@@ -217,17 +218,38 @@ async function auditOne(entry: RefEntry, opts: AuditOptions, seen: { truth: Trut
     let truth: Truth | null = null;
     let basis: MatchBasis | null = null;
     let score: number | null = null;
-    if (entry.doi) {
-      truth = await crossrefByDoi(entry.doi, opts);
-      if (truth) basis = "doi";
+    // A reference with no DOI may still name an arXiv paper, whose DOI is derived
+    // from the identifier and held by DataCite rather than Crossref.
+    const arxiv = entry.doi ? null : arxivId(entry.raw || "");
+    const doi = entry.doi || (arxiv ? arxivDoi(arxiv) : "");
+    if (doi) {
+      // Crossref holds journals and books; DataCite holds preprints and data. An
+      // arXiv DOI is always DataCite's, so Crossref is not asked about it.
+      if (!doi.toLowerCase().startsWith(ARXIV_DOI_PREFIX)) {
+        truth = await crossrefByDoi(doi, opts);
+        if (truth) basis = "doi";
+      }
       if (!truth) {
-        const handle = await doiHandleExists(entry.doi, opts);
+        try {
+          truth = await dataciteByDoi(doi, opts);
+          if (truth) basis = arxiv ? "arxiv" : "doi";
+        } catch (e) {
+          // For an arXiv reference DataCite is the only registry, so its outage
+          // means the reference cannot be certified. For any other DOI it is a
+          // second opinion after Crossref, and the handle check still decides.
+          if (!(e instanceof RegistryUnreachable) || arxiv) throw e;
+        }
+      }
+      if (!truth) {
+        const handle = await doiHandleExists(doi, opts);
         if (handle === false) {
           return {
             ...base,
             verdict: "FABRICATED_CANDIDATE",
             notes: [
-              `DOI ${entry.doi} is registered nowhere: 404 at Crossref AND at the doi.org handle registry`,
+              arxiv
+                ? `arXiv ${arxiv} is registered nowhere: its DOI ${doi} is a 404 at DataCite AND at the doi.org handle registry`
+                : `DOI ${doi} is registered nowhere: 404 at Crossref, DataCite AND the doi.org handle registry`,
             ],
             truth_source: null,
             truth_title: null,
@@ -240,7 +262,7 @@ async function auditOne(entry: RefEntry, opts: AuditOptions, seen: { truth: Trut
             return {
               ...base,
               verdict: "UNVERIFIED",
-              notes: [`DOI ${entry.doi} resolves at doi.org but Crossref has no record for it, which happens with DataCite and other agencies; verify by hand`],
+              notes: [`DOI ${doi} resolves at doi.org, but neither Crossref nor DataCite has a record for it, which happens with smaller registration agencies; verify by hand`],
               truth_source: null,
               truth_title: null,
             };
@@ -250,7 +272,7 @@ async function auditOne(entry: RefEntry, opts: AuditOptions, seen: { truth: Trut
           return {
             ...base,
             verdict: "REGISTRY_UNREACHABLE",
-            notes: ["Crossref 404 and doi.org unreachable; cannot distinguish fabrication from outage"],
+            notes: ["no registry record for the DOI and doi.org unreachable; cannot distinguish fabrication from outage"],
             truth_source: null,
             truth_title: null,
           };

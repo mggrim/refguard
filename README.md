@@ -1,6 +1,6 @@
 # RefGuard
 
-Deterministic reference-integrity auditing for academic manuscripts. RefGuard checks every entry in a bibliography against the scholarly record (Crossref for articles, Open Library for books) and answers: **does this paper exist, do the fields actually belong to it, and has it been retracted?**
+Deterministic reference-integrity auditing for academic manuscripts. RefGuard checks every entry in a bibliography against the scholarly record (Crossref for articles, DataCite for arXiv and other preprints, Open Library for books) and answers: **does this paper exist, do the fields actually belong to it, and has it been retracted?**
 
 No AI is involved in the audit — it is pure registry lookup and field comparison, so it cannot hallucinate. An optional agentic layer (the bundled Claude Code plugin) adds the complementary check: *does each cited paper actually say what the manuscript claims it says?*
 
@@ -10,6 +10,7 @@ No AI is involved in the audit — it is pure registry lookup and field comparis
 - **Field mixing** — one paper's title with another paper's authors, year, or journal (the most common silent error in inherited bibliographies)
 - **Wrong authors, years, venues, DOIs** — including near-twin journal confusions ("… Review" vs "… Journal")
 - **Retracted papers** — via the Retraction Watch database, which Crossref publishes
+- **Preprints** — an arXiv identifier, arXiv URL or arXiv DOI is looked up at DataCite, which registers arXiv's DOIs (10.48550/arXiv.<id>); an identifier registered at neither DataCite nor doi.org is a fabricated candidate. A DOI Crossref does not hold is also tried at DataCite before it is called unverified
 - **Books** — checked against Open Library, which covers the monographs that predate DOI registration. A year that any edition carries counts as correct, and a gap that no edition explains is reported as a question about which edition you cited, not as an error
 - **Benign drift** — the online-first year cited where a print year exists, a one-year gap that neither the print nor the online date explains, a dropped or changed subtitle, or an incomplete author list (reported, not blocking)
 

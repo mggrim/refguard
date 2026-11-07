@@ -415,7 +415,8 @@ function sentenceCut(rest: string): string {
     if (rest[j] === ".") {
       const word = rest.slice(rest.lastIndexOf(" ", j - 1) + 1, j).replace(/^[(“"‘]/, "");
       if (ABBREVIATION.test(word) || /^\p{Lu}$/u.test(word)) continue;
-      if (next && !/^(?:[\p{Lu}(“"‘\d\[]|https?:|www\.|doi:)/u.test(next)) continue;
+      // "arXiv:2607.05775" and "arXiv preprint" open the locator, not the title.
+      if (next && !/^(?:[\p{Lu}(“"‘\d\[]|https?:|www\.|doi:)/u.test(next) && !/^arxiv\b/i.test(next)) continue;
     } else if (next) {
       const segment = next.split(/[.?!](?:\s|$)/)[0] ?? "";
       const venue = /,\s*\d|\d+\s*\(\d/.test(segment);
@@ -718,10 +719,11 @@ const dropOrganisations = (names: string[]): string[] => {
 };
 
 /** What kind of source a reference describes, judged from the reference string alone. */
-export type RefKind = "journal" | "chapter" | "book" | "thesis" | "report" | "web" | "unknown";
+export type RefKind = "journal" | "preprint" | "chapter" | "book" | "thesis" | "report" | "web" | "unknown";
 
 export const REF_KIND_PLURAL: Record<RefKind, string> = {
   journal: "journal articles",
+  preprint: "preprints",
   chapter: "book chapters",
   book: "books",
   thesis: "theses and dissertations",
@@ -732,6 +734,7 @@ export const REF_KIND_PLURAL: Record<RefKind, string> = {
 
 export const REF_KIND_LABEL: Record<RefKind, string> = {
   journal: "journal article",
+  preprint: "preprint",
   chapter: "book chapter",
   book: "book",
   thesis: "thesis or dissertation",
@@ -749,6 +752,9 @@ export const REF_KIND_LABEL: Record<RefKind, string> = {
  */
 export function referenceKind(raw: string): RefKind {
   const s = raw.replace(/\s+/g, " ");
+  // An arXiv identifier or URL names a preprint DataCite registers, so it is checked,
+  // never set aside as a web page. This comes first: an arXiv URL used to read as web.
+  if (/\barxiv(?:\.org\/(?:abs|pdf)\/|:\s*)(?:\d{4}\.\d{4,5}|[a-z][a-z.\-]*\/\d{7})|\b10\.48550\/arxiv\./i.test(s)) return "preprint";
   if (/\b(doctoral|master'?s?|PhD|Ph\.?D\.?|MSc|MA|MBA)?\s*(dissertation|thesis)\b/i.test(s)) return "thesis";
   if (/\bIn:?\s+[A-Z]/.test(s) && /\(\s*Eds?\.?\s*\)/i.test(s)) return "chapter";
   // A volume(issue) or "pp." run is the signature of an article in a serial.
@@ -772,5 +778,5 @@ export function referenceKind(raw: string): RefKind {
 
 /** Registries cover serials well and everything else poorly. */
 export const REGISTRY_COVERS: Record<RefKind, boolean> = {
-  journal: true, chapter: false, book: false, thesis: false, report: false, web: false, unknown: true,
+  journal: true, preprint: true, chapter: false, book: false, thesis: false, report: false, web: false, unknown: true,
 };

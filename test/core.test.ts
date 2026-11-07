@@ -5,6 +5,7 @@ import { auditAll, auditEntry, compare } from "../src/core/audit.ts";
 import { RegistryUnreachable, userAgent, validContactEmail } from "../src/core/registry.ts";
 import { crossrefByDoi, crossrefSearch } from "../src/core/crossref.ts";
 import { bookQuery } from "../src/core/openlibrary.ts";
+import { arxivId } from "../src/core/datacite.ts";
 import { BLOCKING_VERDICTS } from "../src/core/types.ts";
 import type { LocalHit, RefEntry, Truth } from "../src/core/types.ts";
 
@@ -1070,5 +1071,91 @@ describe("each reader's contact address", () => {
   test("an invalid address is left out of the User-Agent rather than sent", () => {
     expect(userAgent("not an address")).not.toContain("mailto");
     expect(userAgent()).toBe("RefGuard/1.0 (https://github.com/mggrim/refguard)");
+  });
+});
+
+// ---------- arXiv and DataCite ----------
+
+describe("arXiv preprints, through DataCite", () => {
+  const ref = "Albayaydh, A., Zhao, J., & Flechais, I. (2026). Beyond the Leaderboard: A Synthesis of Tool-Use, Planning, and Reasoning Failures in Large Language Model Agents. arXiv:2607.05775. https://arxiv.org/abs/2607.05775";
+  const record = {
+    data: { attributes: {
+      doi: "10.48550/arxiv.2607.05775",
+      titles: [{ title: "Beyond the Leaderboard: A Synthesis of Tool-Use, Planning, and Reasoning Failures in Large Language Model Agents" }],
+      creators: [{ familyName: "Albayaydh" }, { familyName: "Zhao" }, { familyName: "Flechais" }],
+      publicationYear: 2026, publisher: "arXiv", types: { resourceTypeGeneral: "Preprint" },
+    } },
+  };
+
+  test("finds the identifier in its common citation forms", () => {
+    expect(arxivId("arXiv:2607.05775.")).toBe("2607.05775");
+    expect(arxivId("arXiv preprint arXiv:1706.03762v5")).toBe("1706.03762");
+    expect(arxivId("https://arxiv.org/abs/2607.05775v2")).toBe("2607.05775");
+    expect(arxivId("https://arxiv.org/pdf/2607.05775")).toBe("2607.05775");
+    expect(arxivId("https://doi.org/10.48550/arXiv.2607.05775")).toBe("2607.05775");
+    expect(arxivId("arXiv:cs/0112017")).toBe("cs/0112017");
+    expect(arxivId("Smith (2020). A paper. Journal, 3(2), 1-9.")).toBeNull();
+  });
+
+  test("an arXiv URL is a preprint the registries cover, not a web page", () => {
+    expect(referenceKind(ref)).toBe("preprint");
+    expect(REGISTRY_COVERS.preprint).toBe(true);
+  });
+
+  test("the title stops before the arXiv locator", () => {
+    const [e] = parseTextRefs(ref);
+    expect(e!.title).toBe("Beyond the Leaderboard: A Synthesis of Tool-Use, Planning, and Reasoning Failures in Large Language Model Agents");
+  });
+
+  test("a real arXiv paper is matched at DataCite without asking Crossref", async () => {
+    const [e] = parseTextRefs(ref);
+    const asked: string[] = [];
+    const r = await auditEntry(e!, {
+      fetchFn: fetchStub((url) => {
+        asked.push(url);
+        if (url.startsWith("https://api.datacite.org/dois/")) return new Response(JSON.stringify(record), { status: 200 });
+        return null;
+      }),
+    });
+    expect(r.verdict).toBe("CONSISTENT");
+    expect(r.match_basis).toBe("arxiv");
+    expect(r.truth_source).toBe("datacite");
+    expect(asked.some((u) => u.includes("api.crossref.org"))).toBe(false);
+  });
+
+  test("an arXiv identifier registered nowhere is a fabricated candidate", async () => {
+    const [e] = parseTextRefs("Hartley, J. R. (2026). Agents that never fail: A survey. arXiv:2607.99991.");
+    const r = await auditEntry(e!, {
+      fetchFn: fetchStub((url) =>
+        url.includes("api.datacite.org") || url.includes("doi.org/api/handles") ? new Response("{}", { status: 404 }) : null),
+    });
+    expect(r.verdict).toBe("FABRICATED_CANDIDATE");
+    expect(r.notes[0]).toContain("arXiv 2607.99991");
+    expect(r.attention?.reason).toContain("arXiv ID");
+  });
+
+  test("DataCite down on an arXiv reference cannot certify it", async () => {
+    const [e] = parseTextRefs(ref);
+    const r = await auditEntry(e!, { fetchFn: fetchStub(() => null) });
+    expect(r.verdict).toBe("REGISTRY_UNREACHABLE");
+  });
+
+  test("a DOI Crossref lacks is looked up at DataCite before being called unverified", async () => {
+    const r = await auditEntry(
+      { key: "z", title: record.data.attributes.titles[0]!.title, authors: ["Albayaydh", "Zhao", "Flechais"], year: "2026", journal: "", doi: "10.5281/zenodo.123", raw: "" },
+      {
+        fetchFn: fetchStub((url) => {
+          if (url.includes("api.crossref.org")) return new Response("{}", { status: 404 });
+          if (url.includes("api.datacite.org")) {
+            const zenodo = { data: { attributes: { ...record.data.attributes, doi: "10.5281/zenodo.123", publisher: "Zenodo" } } };
+            return new Response(JSON.stringify(zenodo), { status: 200 });
+          }
+          return null;
+        }),
+      },
+    );
+    expect(r.verdict).toBe("CONSISTENT");
+    expect(r.match_basis).toBe("doi");
+    expect(r.truth_source).toBe("datacite");
   });
 });

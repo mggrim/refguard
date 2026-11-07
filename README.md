@@ -23,8 +23,8 @@ A verdict says what the comparison found. Each result that is not `CONSISTENT` a
 | Level | When |
 |---|---|
 | Fix this | A blocking verdict: a DOI registered nowhere, a retracted work, or fields that belong to another paper |
-| Worth a look | You cited the online-first year and a version of record now exists (both years and the volume are named), you cited a paper before it was published and it now is, or the year is one off on a strong match and nothing explains it |
-| Probably fine | A difference of record, not of reference: a reprint, an earlier or later edition, a handbook chapter online after its printed volume, a changed subtitle, a partly different author list |
+| Worth a look | You cited the online-first year and a version of record now exists (both years and the volume are named), you cited a paper before it was published and it now is, the year is one off on a strong match and nothing explains it, the reference leaves out a co-author the record lists (named; a list cut short with "et al." or an ellipsis is left alone, and so is an organization the registry lists as an author), or the cited title leaves out words of the record's main title |
+| Probably fine | A difference of record, not of reference: a reprint, an earlier or later edition, a handbook chapter online after its printed volume, a changed or left-out subtitle, a partly different author list |
 | Can't check here | A source no registry indexes (web pages, trade press, reports, teaching cases, theses), or a reference the registries do not hold. Not finding it is not evidence of a problem |
 
 Sources no registry indexes are not searched at all, and a search result with no author in common is not shown as a candidate: both only ever produced someone else's record. The CLI groups its report by level, the JSON output has `attention: {level, reason}` on each result, and the site folds the two quiet levels to a count.

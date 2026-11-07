@@ -87,6 +87,10 @@ function itemToTruth(item: CrossrefItem): Truth {
         return parts[parts.length - 1] ?? "";
       })
       .filter(Boolean),
+    groupAuthors: (item.author ?? [])
+      .filter((a) => !a.family && a.name)
+      .map((a) => (a.name ?? "").trim().split(/\s+/).at(-1) ?? "")
+      .filter(Boolean),
     retracted: isRetracted(item),
     id: item.DOI ? `https://doi.org/${item.DOI}` : undefined,
     type: item.type,

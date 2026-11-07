@@ -4,6 +4,9 @@ const STOPWORDS = new Set(["the", "a", "an", "of", "and", "in", "on", "for", "to
 
 export function normalize(s: string): string {
   return s
+    // Crossref titles can carry JATS markup ("The <i>Selfish</i> Gene"); the tag
+    // names are not words of the title.
+    .replace(/<[^>]+>/g, " ")
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
@@ -84,6 +87,42 @@ export function surnameKey(name: string): string {
   const parts = n.split(" ").filter(Boolean);
   return parts[parts.length - 1] ?? n;
 }
+
+/**
+ * Words of the record's title that the cited title leaves out, when the cited title
+ * is otherwise a subset of the record's. `subtitle` is true when what is left out
+ * is exactly the subtitle, the part after the record's first colon or question
+ * mark. Similarity alone cannot see either case: the containment credit that
+ * forgives a dropped subtitle scores a shortened title as identical.
+ */
+export function titleGap(cited: string, record: string): { missing: string[]; subtitle: boolean } {
+  const c = new Set(tokens(cited));
+  const r = tokens(record);
+  if (!c.size || !r.length) return { missing: [], subtitle: false };
+  // Only when every cited word is in the record; a reworded title is a different case.
+  if ([...c].some((t) => !r.includes(t))) return { missing: [], subtitle: false };
+  const missing = [...new Set(r.filter((t) => !c.has(t) && t.length > 1))];
+  if (!missing.length) return { missing, subtitle: false };
+  const cut = record.search(/[:?]\s/);
+  const main = cut > 0 ? new Set(tokens(record.slice(0, cut + 1))) : null;
+  const subtitle = Boolean(main && main.size && [...main].every((t) => c.has(t)) && [...c].every((t) => main.has(t)));
+  return { missing, subtitle };
+}
+
+/** The record's authors that the cited list leaves out, in the record's order. */
+export function missingAuthors(claimed: string[], truth: string[]): string[] {
+  const have = new Set(claimed.map(surnameKey));
+  const seen = new Set<string>();
+  return truth.filter((t) => {
+    const k = surnameKey(t);
+    if (!k || have.has(k) || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/** A cited list that says it is shortened: "et al.", an ellipsis, BibTeX "and others". */
+export const TRUNCATED_AUTHORS = /\bet\s+al\b|\band\s+others\b|\.\.\.|…/i;
 
 export function authorOverlap(claimed: string[], truth: string[]): number {
   if (!claimed.length || !truth.length) return -1;

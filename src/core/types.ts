@@ -47,6 +47,12 @@ export interface Truth {
   doi: string;
   authors: string[];
   retracted: boolean;
+  /**
+   * Entries in `authors` that name an organization rather than a person: Crossref's
+   * name-only authors ("Philosophy Documentation Center"), DataCite's Organizational
+   * creators. A reference that leaves them out has not dropped a co-author.
+   */
+  groupAuthors?: string[];
   id?: string;
   /** Open Library only: how many printings this work has. A multi-edition work has
    * several correct years, which is why an edition gap is not a mismatch. */

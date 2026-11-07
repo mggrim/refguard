@@ -1159,3 +1159,66 @@ describe("arXiv preprints, through DataCite", () => {
     expect(r.truth_source).toBe("datacite");
   });
 });
+
+// ---------- what a reference leaves out ----------
+
+describe("authors and title words a reference leaves out", () => {
+  const record = (over: Partial<Truth> = {}): Truth => ({
+    source: "crossref", title: "Building sustainable hybrid organizations: The case of commercial microfinance organizations",
+    year: "2010", journal: "Academy of Management Journal", doi: "", authors: ["Battilana", "Dorado"], retracted: false, ...over,
+  });
+  const cite = (over: Partial<RefEntry> = {}): RefEntry => ({
+    key: "b", title: "Building sustainable hybrid organizations: The case of commercial microfinance organizations",
+    authors: ["Battilana", "Dorado"], year: "2010", journal: "Academy of Management Journal", doi: "", raw: "Battilana & Dorado", ...over,
+  });
+
+  test("a dropped co-author is reported, by name", () => {
+    const c = compare(cite({ authors: ["Battilana"], raw: "Battilana, J. 2010." }), record());
+    expect(c.verdict).toBe("BENIGN_DRIFT");
+    expect(c.notes.join(" ")).toContain("cited 1 of 2 authors; the record also lists Dorado");
+  });
+
+  test("a list cut short on purpose is left alone", () => {
+    for (const raw of ["Battilana, J., et al. 2010.", "Battilana, J., … Dorado, S.", "author = {Battilana and others}"]) {
+      expect(compare(cite({ authors: ["Battilana"], raw }), record()).verdict).toBe("CONSISTENT");
+    }
+  });
+
+  test("an organization the registry lists as an author is not a missing co-author", () => {
+    const c = compare(cite({ authors: ["Battilana", "Dorado"] }),
+      record({ authors: ["Battilana", "Dorado", "Center"], groupAuthors: ["Center"] }));
+    expect(c.verdict).toBe("CONSISTENT");
+  });
+
+  test("Open Library author lists are too patchy to judge", () => {
+    expect(compare(cite({ authors: ["Battilana"] }), record({ source: "openlibrary" })).verdict).toBe("CONSISTENT");
+  });
+
+  test("words dropped from the main title are reported", () => {
+    const c = compare(cite({ title: "Building hybrid organizations: The case of commercial microfinance organizations" }), record());
+    expect(c.verdict).toBe("BENIGN_DRIFT");
+    expect(c.notes.join(" ")).toContain("title words left out (sustainable)");
+  });
+
+  test("a dropped subtitle is reported as a dropped subtitle", () => {
+    const c = compare(cite({ title: "Building sustainable hybrid organizations" }), record());
+    expect(c.verdict).toBe("BENIGN_DRIFT");
+    expect(c.notes.join(" ")).toContain("subtitle left out");
+  });
+
+  test("JATS markup in a registry title is not read as missing words", () => {
+    const c = compare(cite({ title: "The selfish gene" }), record({ title: "The <i>Selfish</i> Gene" }));
+    expect(c.notes.join(" ")).not.toContain("left out");
+  });
+
+  test("the attention level asks for a look at a missing co-author and leaves a dropped subtitle as fine", async () => {
+    const { attentionFor } = await import("../src/core/attention.ts");
+    const drop = compare(cite({ authors: ["Battilana"], raw: "Battilana, J. 2010." }), record());
+    const a = attentionFor(cite({ authors: ["Battilana"] }), "journal", { key: "b", title: "", year: "2010", verdict: drop.verdict, notes: drop.notes } as any, record());
+    expect(a?.level).toBe("look");
+    expect(a?.reason).toContain("leaves out Dorado");
+    const sub = compare(cite({ title: "Building sustainable hybrid organizations" }), record());
+    const b = attentionFor(cite(), "journal", { key: "b", title: "", year: "2010", verdict: sub.verdict, notes: sub.notes } as any, record());
+    expect(b?.level).toBe("fine");
+  });
+});

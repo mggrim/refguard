@@ -5,7 +5,7 @@ import { REF_KIND_LABEL, REGISTRY_COVERS, referenceKind } from "./parse.ts";
 import { openLibrarySearch } from "./openlibrary.ts";
 import { crossrefByDoi, crossrefSearch } from "./crossref.ts";
 import { ARXIV_DOI_PREFIX, arxivDoi, arxivId, dataciteByDoi } from "./datacite.ts";
-import { authorOverlap, GENERIC_TITLE_TOKENS, journalMatch, knownYears, titleDistinctiveness, titleSim } from "./match.ts";
+import { authorOverlap, GENERIC_TITLE_TOKENS, journalMatch, knownYears, missingAuthors, titleDistinctiveness, titleGap, titleSim, TRUNCATED_AUTHORS } from "./match.ts";
 import { attentionFor } from "./attention.ts";
 import { doiHandleExists, newBreaker, RegistryUnreachable, type RegistryOptions } from "./registry.ts";
 
@@ -101,6 +101,18 @@ export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; note
     } else if (sim < 0.9) {
       notes.push(`title drift (formatting/subtitle, sim ${sim.toFixed(2)})`);
       drift = true;
+    } else {
+      // A shortened title scores as identical, so the words left out are found
+      // directly. A dropped subtitle is common and harmless; dropped words from the
+      // main title are a misquotation the author will want to correct.
+      const gap = titleGap(entry.title, truth.title);
+      if (gap.subtitle) {
+        notes.push(`subtitle left out: the record's title is "${truth.title.slice(0, 160)}"`);
+        drift = true;
+      } else if (gap.missing.length) {
+        notes.push(`title words left out (${gap.missing.slice(0, 6).join(", ")}): the record's title is "${truth.title.slice(0, 160)}"`);
+        drift = true;
+      }
     }
   }
 
@@ -156,6 +168,16 @@ export function compare(entry: RefEntry, truth: Truth): { verdict: Verdict; note
   } else if (ao >= 0.5 && ao < 1) {
     notes.push(`partial author overlap (${Math.round(ao * 100)}%)`);
     drift = true;
+  } else if (ao === 1 && truth.source !== "openlibrary" && !TRUNCATED_AUTHORS.test(entry.raw)) {
+    // Every cited author is on the record, but the record may list more. A list cut
+    // short on purpose says so ("et al.", an ellipsis); one that silently drops a
+    // co-author is incomplete. Open Library's author lists are too patchy to judge.
+    const people = truth.authors.filter((a) => !truth.groupAuthors?.includes(a));
+    const missing = missingAuthors(entry.authors, people);
+    if (missing.length) {
+      notes.push(`incomplete author list: cited ${entry.authors.length} of ${entry.authors.length + missing.length} authors; the record also lists ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` and ${missing.length - 5} more` : ""}`);
+      drift = true;
+    }
   }
 
   if (entry.doi && truth.doi && entry.doi !== truth.doi) {
@@ -315,7 +337,7 @@ async function auditOne(entry: RefEntry, opts: AuditOptions, seen: { truth: Trut
       const yearOnly =
         c.verdict === "INCONSISTENT" &&
         c.notes.length > 0 &&
-        c.notes.every((n) => n.startsWith("year off by") || n.startsWith("title drift"));
+        c.notes.every((n) => n.startsWith("year off by") || n.startsWith("title drift") || n.startsWith("subtitle left out") || n.startsWith("title words left out"));
       const contradicted = c.verdict === "INCONSISTENT" && !yearOnly;
       return {
         ...withTruth({ source: "local", title: local.title, year: local.year, journal: local.journal,
@@ -438,6 +460,7 @@ async function auditOne(entry: RefEntry, opts: AuditOptions, seen: { truth: Trut
     const viaDoi = Boolean(entry.doi) && truth.doi === entry.doi;
     const recordQuestion = (n: string) =>
       n.startsWith("year off by") || n.startsWith("title drift") ||
+      n.startsWith("subtitle left out") || n.startsWith("title words left out") || n.startsWith("incomplete author list") ||
       (truth.source === "openlibrary" && n.startsWith("partial author overlap"));
     if (c.verdict === "INCONSISTENT" && !viaDoi && c.notes.length > 0 && c.notes.every(recordQuestion)) {
       const years = knownYears(truth).sort((a, b) => a - b);

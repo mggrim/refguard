@@ -115,6 +115,24 @@ export function attentionFor(entry: RefEntry, kind: RefKind, r: AuditResult, tru
     };
   }
 
+  // Words or names the reference leaves out of the record are corrections to make.
+  const authorGap = r.notes.find((n) => n.startsWith("incomplete author list"));
+  if (authorGap) {
+    const m = authorGap.match(/cited (\d+) of (\d+) authors; the record also lists (.+)$/);
+    return {
+      level: "look",
+      reason: m
+        ? `The reference names ${m[1]} of the record's ${m[2]} authors and leaves out ${m[3]}.`
+        : "The reference leaves authors out of the record's list.",
+    };
+  }
+  if (r.notes.some((n) => n.startsWith("title words left out"))) {
+    return { level: "look", reason: `The cited title leaves out words from the record's title, "${truth.title}".` };
+  }
+  if (r.notes.some((n) => n.startsWith("subtitle left out"))) {
+    return { level: "fine", reason: `The cited title leaves out the record's subtitle: "${truth.title}".` };
+  }
+
   // Everything below is a difference of record, not of reference.
   if (ey !== null && print && ey > print && years.includes(ey)) {
     return { level: "fine", reason: `The cited year is when it went online (${ey}); it appeared in print in ${print}. Either year is defensible.` };

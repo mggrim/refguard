@@ -64,6 +64,7 @@ function toTruth(a: DataciteAttributes): Truth {
     journal: publisher,
     doi: (a.doi ?? "").toLowerCase(),
     authors: (a.creators ?? []).map(familyOf).filter(Boolean),
+    groupAuthors: (a.creators ?? []).filter((c) => c.nameType === "Organizational").map(familyOf).filter(Boolean),
     retracted: false, // DataCite carries no retraction feed; withdrawn preprints say so on arXiv itself
     id: a.url,
     type: a.types?.resourceTypeGeneral?.toLowerCase(),

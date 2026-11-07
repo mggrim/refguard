@@ -3,6 +3,28 @@ import { normDoi } from "./match.ts";
 
 export class RegistryUnreachable extends Error {}
 
+/**
+ * A plausible address, short enough for a header and free of anything that could
+ * break out of one. Crossref only needs somewhere to write if a client misbehaves,
+ * so this checks shape, not deliverability.
+ */
+export function validContactEmail(email: unknown): email is string {
+  return typeof email === "string" && email.length <= 254 &&
+    /^[^\s\x00-\x1f\x7f@<>()",;:\\]+@[^\s\x00-\x1f\x7f@<>()",;:\\]+\.[^\s\x00-\x1f\x7f@<>()",;:\\]{2,}$/.test(email);
+}
+
+/**
+ * The User-Agent every registry call carries. Crossref puts a request in its polite
+ * pool when the User-Agent names a contact address, the same as a `mailto`
+ * parameter. Keeping the address out of the URL matters on the site: the edge
+ * cache is keyed by URL, so an address in the query string would split one shared
+ * cache into a private one per visitor.
+ */
+export function userAgent(mailto?: string): string {
+  const contact = validContactEmail(mailto) ? `; mailto:${mailto}` : "";
+  return `RefGuard/1.0 (https://github.com/mggrim/refguard${contact})`;
+}
+
 export function sanitizeSearchQuery(q: string): string {
   return q.replace(/[?&|!^~*:\\/]/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -10,7 +32,11 @@ export function sanitizeSearchQuery(q: string): string {
 export interface RegistryOptions {
   /** Injectable for tests and for platforms with custom fetch. */
   fetchFn?: typeof fetch;
-  /** Joins Crossref's polite pool, which is faster and better supported. Never hardcoded. */
+  /**
+   * Joins Crossref's polite pool, which is faster and better supported. Crossref
+   * rate-limits per address, so on the site each visitor supplies their own.
+   * Sent in the User-Agent, never the URL. Never hardcoded.
+   */
   mailto?: string;
   timeoutMs?: number;
   /** Attempts after a 429 before giving up. Kept low: the fail-closed verdict is the point. */
@@ -103,7 +129,7 @@ export async function registryGet(url: string, opts: RegistryOptions, attempt = 
   let resp: Response;
   try {
     resp = await f(url, {
-      headers: { "User-Agent": "RefGuard/1.0 (https://github.com/mggrim/refguard)" },
+      headers: { "User-Agent": userAgent(opts.mailto) },
       signal: AbortSignal.timeout(opts.timeoutMs ?? 15000),
       ...(opts.cacheTtlSeconds
         ? { cf: { cacheTtl: opts.cacheTtlSeconds, cacheEverything: true } }

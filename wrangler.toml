@@ -6,12 +6,6 @@ compatibility_date = "2026-08-01"
 directory = "web/public"
 binding = "ASSETS"
 
-[vars]
-# Crossref's polite pool needs a real contact address. Without one every request
-# from the site lands in the anonymous pool, which is throttled far harder and can
-# be blocked outright. This is public by design — it is how Crossref reaches us.
-REFGUARD_MAILTO = "m.grimes@jbs.cam.ac.uk"
-
 # Per-IP rate limiting, so one script cannot get the whole site throttled by
 # Crossref. 120 audited entries per minute is far above a person pasting a
 # bibliography and far below a scraper.

@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { familyNames, parseBib, parseTextRefs, referenceKind, referencesSection, REGISTRY_COVERS, trimDoiTail } from "../src/core/parse.ts";
 import { authorOverlap, journalMatch, titleSim } from "../src/core/match.ts";
 import { auditAll, auditEntry, compare } from "../src/core/audit.ts";
-import { RegistryUnreachable } from "../src/core/registry.ts";
-import { crossrefByDoi } from "../src/core/crossref.ts";
+import { RegistryUnreachable, userAgent, validContactEmail } from "../src/core/registry.ts";
+import { crossrefByDoi, crossrefSearch } from "../src/core/crossref.ts";
 import { bookQuery } from "../src/core/openlibrary.ts";
 import { BLOCKING_VERDICTS } from "../src/core/types.ts";
 import type { LocalHit, RefEntry, Truth } from "../src/core/types.ts";
@@ -1038,5 +1038,37 @@ describe("the version of record beats a preprint", () => {
     const other = xref({ DOI: "10.1234/other", title: ["Something else about real papers entirely"], author: [{ family: "Roe" }] });
     const r = await auditEntry(paper, { fetchFn: searchStub([ssrn, other]) });
     expect(r.truth_doi).toBe("10.2139/ssrn.1234567");
+  });
+});
+
+// ---------- contact address ----------
+
+describe("each reader's contact address", () => {
+  test("accepts ordinary addresses and refuses anything that could break a header", () => {
+    for (const ok of ["you@example.org", "a.b+c@dept.uni.ac.uk", "x_y@sub.example.co"]) expect(validContactEmail(ok)).toBe(true);
+    for (const bad of ["", "no-at-sign", "a@b", "a b@c.org", "a@c.org\r\nX-Evil: 1", "a@c.org\x00", "<a@c.org>", `${"a".repeat(250)}@c.org`, 42, null])
+      expect(validContactEmail(bad)).toBe(false);
+  });
+
+  test("goes in the User-Agent, never in the URL, so the edge cache stays shared", async () => {
+    const seen: Array<{ url: string; ua: string }> = [];
+    const fetchFn = (async (input: any, init?: RequestInit) => {
+      seen.push({ url: String(input), ua: new Headers(init?.headers).get("user-agent") ?? "" });
+      return new Response(JSON.stringify({ message: { items: [] } }), { status: 200 });
+    }) as typeof fetch;
+    const e = { key: "k", title: "A title", authors: ["Smith"], year: "2020", journal: "", doi: "", raw: "" };
+    await crossrefSearch(e, { fetchFn, mailto: "reader@example.org" });
+    await crossrefByDoi("10.1/x", { fetchFn, mailto: "reader@example.org" });
+    expect(seen).toHaveLength(2);
+    for (const s of seen) {
+      expect(s.url).not.toContain("mailto");
+      expect(s.url).not.toContain("reader%40example.org");
+      expect(s.ua).toContain("mailto:reader@example.org");
+    }
+  });
+
+  test("an invalid address is left out of the User-Agent rather than sent", () => {
+    expect(userAgent("not an address")).not.toContain("mailto");
+    expect(userAgent()).toBe("RefGuard/1.0 (https://github.com/mggrim/refguard)");
   });
 });

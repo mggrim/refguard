@@ -4,18 +4,18 @@
  * The browser drives the audit one entry at a time so each request stays
  * within subrequest limits and the UI can show progress:
  *   POST /api/parse        {input}  → {entries: RefEntry[], reading}
- *   POST /api/audit-entry  {entry}  → AuditResult
+ *   POST /api/audit-entry  {entry, email}  → AuditResult
+ * Crossref rate-limits per contact address, so each visitor gives their own
+ * and the site's capacity grows with its readers instead of being shared by all.
  * Static UI is served from the assets binding.
  */
-import { auditEntry, parseBib, readReferenceList, type RefEntry } from "../src/core/index.ts";
+import { auditEntry, parseBib, readReferenceList, validContactEmail, type RefEntry } from "../src/core/index.ts";
 
 const MAX_INPUT_BYTES = 200_000;
 const MAX_ENTRIES = 300;
 
 interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> };
-  REFGUARD_MAILTO?: string;
-  OPENALEX_MAILTO?: string;   // legacy name, still honoured
   /** Per-IP limiter. Absent in local dev, where the check is skipped. */
   AUDIT_LIMIT?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
 }
@@ -79,9 +79,14 @@ export default {
           429,
         );
       }
-      const body = (await req.json().catch(() => null)) as { entry?: RefEntry } | null;
+      const body = (await req.json().catch(() => null)) as { entry?: RefEntry; email?: unknown } | null;
       const e = body?.entry;
       if (!e || typeof e.key !== "string") return json({ error: "missing entry" }, 400);
+      // Used only as the contact address on this entry's registry requests; never stored or logged.
+      const email = typeof body?.email === "string" ? body.email.trim() : "";
+      if (!validContactEmail(email)) {
+        return json({ error: "an email address is needed to check references; enter yours above the button" }, 400);
+      }
       const entry: RefEntry = {
         key: String(e.key).slice(0, 100),
         title: String(e.title ?? "").slice(0, 500),
@@ -92,7 +97,7 @@ export default {
         raw: String(e.raw ?? "").slice(0, 500),
       };
       const result = await auditEntry(entry, {
-        mailto: env.REFGUARD_MAILTO ?? env.OPENALEX_MAILTO,
+        mailto: email,
         cacheTtlSeconds: REGISTRY_CACHE_SECONDS,
       });
       return json(result);

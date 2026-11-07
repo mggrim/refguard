@@ -36,6 +36,14 @@
   input.addEventListener('input', updateCount);
   updateCount();
 
+  // The address goes to Crossref with each lookup so this reader gets their own
+  // allowance. Remembering it is a convenience only; storage can be blocked.
+  const email = $('email');
+  const EMAIL_KEY = 'refguard.email';
+  try { email.value = localStorage.getItem(EMAIL_KEY) || ''; } catch {}
+  const emailOk = (v) => /^[^\s@<>()",;:\\]+@[^\s@<>()",;:\\]+\.[^\s@<>()",;:\\]{2,}$/.test(v) && v.length <= 254;
+  email.addEventListener('input', () => email.removeAttribute('aria-invalid'));
+
   $('sample').addEventListener('click', async () => {
     const r = await fetch('/sample.txt');
     input.value = await r.text();
@@ -254,6 +262,15 @@
     e.preventDefault();
     const text = input.value.trim();
     if (!text || running) { if (!text) input.focus(); return; }
+    const address = email.value.trim();
+    if (!emailOk(address)) {
+      email.setAttribute('aria-invalid', 'true');
+      status.textContent = 'Enter your email address first. Crossref asks for one with every lookup.';
+      status.className = 'status err';
+      email.focus();
+      return;
+    }
+    try { localStorage.setItem(EMAIL_KEY, address); } catch {}
     running = true; go.disabled = true; clear();
     status.textContent = 'Reading the bibliography…';
     try {
@@ -268,7 +285,7 @@
       for (let i = 0; i < entries.length; i++) {
         status.textContent = `${i + 1} of ${entries.length}: asking the registry about ${entries[i].key}…`;
         bar.style.width = `${(i / entries.length) * 100}%`;
-        const ar = await post('/api/audit-entry', { entry: entries[i] });
+        const ar = await post('/api/audit-entry', { entry: entries[i], email: address });
         addRow(ar.ok ? await ar.json()
                      : { key: entries[i].key, title: entries[i].title, year: entries[i].year, verdict: 'REGISTRY_UNREACHABLE', notes: [`server error ${ar.status}`] });
       }

@@ -7,7 +7,7 @@
  * A management bibliography carries almost no DOIs, so every entry is a search, and
  * one person checking one manuscript exhausted the day for everyone.
  *
- * Crossref's polite pool advertises 3 requests a second with no daily cap, which is
+ * Crossref's polite pool allows 3 searches a second with no daily cap, which is
  * the difference between a tool that works in public and one that does not. It also
  * reports a work `type` from the publisher's own deposit, which is better evidence
  * than guessing a reference's kind from its punctuation.
@@ -107,8 +107,9 @@ export async function crossrefSearch(
 ): Promise<SearchMatch | null> {
   const query = (entry.raw && entry.raw.length > entry.title.length ? entry.raw : entry.title).slice(0, 400);
   if (!query.trim()) return null;
-  const url = `${ENDPOINT}?query.bibliographic=${encodeURIComponent(query)}&rows=5&select=${SELECT}` +
-    (opts.mailto ? `&mailto=${encodeURIComponent(opts.mailto)}` : "");
+  // The contact address travels in the User-Agent (registryGet), not here, so the
+  // edge cache can share one answer between visitors.
+  const url = `${ENDPOINT}?query.bibliographic=${encodeURIComponent(query)}&rows=5&select=${SELECT}`;
   const data = (await registryGet(url, opts)) as { message?: { items?: CrossrefItem[] } } | null;
 
   const cited = Number(entry.year);
@@ -182,7 +183,7 @@ export function isPreprint(t: Pick<Truth, "doi" | "type">): boolean {
 
 /** Direct DOI lookup. Returns null for a DOI Crossref does not hold. */
 export async function crossrefByDoi(doi: string, opts: RegistryOptions = {}): Promise<Truth | null> {
-  const url = `${ENDPOINT}/${encodeURIComponent(doi)}` + (opts.mailto ? `?mailto=${encodeURIComponent(opts.mailto)}` : "");
+  const url = `${ENDPOINT}/${encodeURIComponent(doi)}`;
   const data = (await registryGet(url, opts)) as { message?: CrossrefItem } | null;
   if (!data) return null;
   return data.message ? itemToTruth(data.message) : null;

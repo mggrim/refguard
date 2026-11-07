@@ -60,11 +60,13 @@ A plain-text list can be in APA, the AMJ/ASQ/ASR/Organization Science/SMJ style 
 
 No reference is dropped without a word. RefGuard counts the year markers in the text separately from the splitter. If it read fewer references than that count, or an entry seems to hold two references, the report gives a parse warning and names the entries to check, and the CLI exits 2 (cannot certify). Text that is not a reference (headings, page furniture, tables, author bios) is listed as set aside.
 
-The CLI also consults a local Zotero library when one is present. If a local [Zotero](https://www.zotero.org) library exists (`~/Zotero/zotero.sqlite`, or `--zotero <path>`), entries are also matched against it (read-only) and PDF paths are reported for downstream claim-checking. Set `REFGUARD_MAILTO=you@example.org` to join Crossref's polite pool.
+The CLI also consults a local Zotero library when one is present. If a local [Zotero](https://www.zotero.org) library exists (`~/Zotero/zotero.sqlite`, or `--zotero <path>`), entries are also matched against it (read-only) and PDF paths are reported for downstream claim-checking. Set `REFGUARD_MAILTO=you@example.org` to join Crossref's polite pool (sent in the User-Agent).
 
 ## Web app
 
 A Cloudflare Worker serving a paste-your-bibliography page (`web/`). The browser audits one entry per request, so progress is visible and no entry is skipped.
+
+Each visitor enters their own email address. Crossref rate-limits per contact address (3 searches a second in its polite pool), so a site that sent one shared address would let only two or three people check at once. With an address per visitor, each person gets their own allowance. The address is sent to Crossref and Open Library in the User-Agent of that visitor's lookups and is not stored by the site; keeping it out of the URL lets the edge cache share answers between visitors. The browser remembers it locally.
 
 ```bash
 bun run web:dev      # local preview

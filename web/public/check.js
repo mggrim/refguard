@@ -6,18 +6,18 @@
   const $ = (id) => document.getElementById(id);
   const TIER = { FABRICATED_CANDIDATE:'b', INCONSISTENT:'b', RETRACTED:'b', BENIGN_DRIFT:'r', UNVERIFIED:'r', AMBIGUOUS_MATCH:'r', REGISTRY_UNREACHABLE:'r', CONSISTENT:'p' };
   const LABEL = { FABRICATED_CANDIDATE:'Fabricated candidate', INCONSISTENT:'Inconsistent', RETRACTED:'Retracted', BENIGN_DRIFT:'Benign drift', UNVERIFIED:'Unverified', AMBIGUOUS_MATCH:'Ambiguous match', REGISTRY_UNREACHABLE:'Registry unreachable', CONSISTENT:'Consistent' };
-  const KIND = { journal:'journal article', chapter:'book chapter', book:'book', thesis:'thesis or dissertation', report:'report or working paper', web:'web page or trade press', unknown:'unrecognised type' };
-  const KIND_PLURAL = { journal:'journal articles', chapter:'book chapters', book:'books', thesis:'theses and dissertations', report:'reports and working papers', web:'web pages and trade press', unknown:'unrecognised types' };
+  const KIND = { journal:'journal article', chapter:'book chapter', book:'book', thesis:'thesis or dissertation', report:'report or working paper', web:'web page or trade press', unknown:'unrecognized type' };
+  const KIND_PLURAL = { journal:'journal articles', chapter:'book chapters', book:'books', thesis:'theses and dissertations', report:'reports and working papers', web:'web pages and trade press', unknown:'unrecognized types' };
   const COVERED = { journal:true, chapter:false, book:false, thesis:false, report:false, web:false, unknown:true };
   const MEANING = {
-    FABRICATED_CANDIDATE: 'the DOI is registered nowhere; 404 at both Crossref and doi.org',
-    INCONSISTENT: 'the paper exists but a field does not belong to it',
+    FABRICATED_CANDIDATE: 'the DOI is unregistered; 404 at both Crossref and doi.org',
+    INCONSISTENT: 'the paper exists, but a cited field conflicts with its record',
     RETRACTED: 'the registry marks this work retracted',
-    BENIGN_DRIFT: 'the online-first year cited where a print year exists, a year one off that neither date explains, a changed subtitle, or an incomplete author list',
-    UNVERIFIED: 'no registry confirmed it; not proof of fabrication',
-    AMBIGUOUS_MATCH: 'a record was found but may be a different work or edition; the reference may be fine',
-    REGISTRY_UNREACHABLE: 'a registry could not be reached, so nothing can be certified',
-    CONSISTENT: 'every field matches the registry record',
+    BENIGN_DRIFT: 'a citation of the online-first year of a paper that has a print year, a year off by one for a reason other than the gap between online and print dates, a changed subtitle, or an incomplete author list',
+    UNVERIFIED: 'unconfirmed by the registries; a weaker finding than fabrication',
+    AMBIGUOUS_MATCH: 'RefGuard found a record that may belong to a different work or edition; the reference may be fine',
+    REGISTRY_UNREACHABLE: 'a registry was unreachable, so RefGuard withholds certification',
+    CONSISTENT: 'the cited fields all match the registry record',
   };
   const BASIS = { doi: 'Matched by DOI', search: 'Matched by reference search', book: 'Matched in Open Library', local: 'Matched in your local library' };
   const tier = (v) => TIER[v] ?? 'r';          // fail closed: an unknown verdict goes to review
@@ -56,7 +56,7 @@
     const box = $('glossary'), btn = $('explain');
     box.hidden = !box.hidden;
     btn.setAttribute('aria-expanded', String(!box.hidden));
-    btn.textContent = box.hidden ? 'What the verdicts mean' : 'Hide the verdicts';
+    btn.textContent = box.hidden ? 'Explain the verdicts' : 'Hide the verdicts';
     if (!box.hidden) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
 
@@ -84,11 +84,11 @@
       lines.push(heading, '-'.repeat(heading.length), ...notes.map((n) => `  ${n}`), '');
     }
     const groupsOut = [
-      ['fix', 'FIX THIS: likely a real error in the reference'],
-      ['look', 'WORTH A LOOK: a real difference you may want to change'],
-      ['fine', 'PROBABLY FINE: a difference of record, not of reference'],
-      ['cant', "CAN'T CHECK HERE: outside the registries or not found, which is not evidence of a problem"],
-      ['ok', 'CONSISTENT: every field matches the registry record'],
+      ['fix', 'FIX THIS: a likely error in the reference'],
+      ['look', 'WORTH A LOOK: a substantive difference you may want to correct'],
+      ['fine', 'PROBABLY FINE: a difference among the published versions of the work'],
+      ['cant', "CAN'T CHECK HERE: beyond the registries' coverage or missing from them; treat as neutral"],
+      ['ok', 'CONSISTENT: the cited fields all match the registry record'],
     ];
     for (const [k, heading] of groupsOut) {
       const rows = results.filter((r) => levelOf(r) === k);
@@ -111,7 +111,7 @@
         lines.push('');
       }
     }
-    lines.push('What the verdicts mean:');
+    lines.push('The verdicts:');
     for (const [v, l] of Object.entries(LABEL)) lines.push(`  ${l} — ${MEANING[v]}`);
     return lines.join('\n');
   }
@@ -154,7 +154,7 @@
   function readingNotes(){
     if (!reading) return [];
     const out = [];
-    if (reading.truncated) out.push(`Only the first ${reading.checked} of ${reading.truncated} entries are checked here. Split the list to check the rest.`);
+    if (reading.truncated) out.push(`RefGuard checks the first ${reading.checked} of ${reading.truncated} entries here. Split the list to check the remaining entries.`);
     for (const w of reading.warnings || []) out.push(w.message);
     return out;
   }
@@ -184,8 +184,8 @@
     }
     const need = c.fix + c.look, sum = $('summary');
     if (results.length) {
-      sum.innerHTML = `<b>${need ? `${need} of ${results.length} ${need === 1 ? 'needs' : 'need'} your attention.` : 'Nothing needs your attention.'}</b> ` +
-        `${c.fine} probably fine, ${c.cant} could not be checked here, ${c.ok} consistent.`;
+      sum.innerHTML = `<b>${need ? `Check ${need} of ${results.length} ${results.length === 1 ? 'entry' : 'entries'}.` : 'The list is clear of errors and of entries worth a look.'}</b> ` +
+        `${c.fine} probably fine, ${c.cant} uncheckable here, ${c.ok} consistent.`;
       sum.hidden = false;
     }
   }
@@ -237,19 +237,19 @@
     let k, stamp, text;
     if (c.fix) {
       k = 'b'; stamp = 'Cannot certify';
-      text = `<b>${c.fix} of ${n} entries</b> ${c.fix === 1 ? "looks like a real error" : "look like real errors"}. Fix or remove ${c.fix === 1 ? "it" : "them"} before you submit` +
-             (c.look ? `, and look at the ${c.look} marked worth a look.` : '.');
+      text = `<b>${c.fix} of ${n} entries</b> ${c.fix === 1 ? "appears to contain an error" : "appear to contain errors"}. Fix or remove ${c.fix === 1 ? "that entry" : "those entries"} before you submit` +
+             (c.look ? `, and review the ${c.look} marked worth a look.` : '.');
     } else if (c.look || c.fine || c.cant) {
       k = 'r'; stamp = 'Certified with reservations';
-      text = `Nothing looks like an error. ` +
+      text = `The checked entries appear free of errors. ` +
         (c.look ? `<b>${c.look} ${c.look === 1 ? "is" : "are"} worth a look</b>, ` : '') +
-        `${c.fine} ${c.fine === 1 ? "is" : "are"} probably fine, and ${c.cant} could not be checked here.`;
+        `${c.fine} ${c.fine === 1 ? "is" : "are"} probably fine, and ${c.cant} ${c.cant === 1 ? "is" : "are"} uncheckable here.`;
     } else if (readingNotes().length) {
       k = 'r'; stamp = 'Certified with reservations';
-      text = `Every entry that was read matches the scholarly record, but the reader may have missed a reference. Check the places named above.`;
+      text = `The entries that RefGuard read all match the scholarly record, but the parser may have missed a reference. Check the places that RefGuard names above.`;
     } else {
       k = 'p'; stamp = 'Certified';
-      text = `All <b>${n} entries</b> match the scholarly record, and none is marked retracted.`;
+      text = `All <b>${n} entries</b> match the scholarly record, and the list is free of retractions.`;
     }
     cert.className = 'cert on ' + k;
     $('cert-stamp').textContent = stamp;
@@ -265,7 +265,7 @@
     const address = email.value.trim();
     if (!emailOk(address)) {
       email.setAttribute('aria-invalid', 'true');
-      status.textContent = 'Enter your email address first. Crossref asks for one with every lookup.';
+      status.textContent = 'Enter your email address first, because Crossref asks for a contact address with lookups.';
       status.className = 'status err';
       email.focus();
       return;
@@ -290,11 +290,11 @@
                      : { key: entries[i].key, title: entries[i].title, year: entries[i].year, verdict: 'REGISTRY_UNREACHABLE', notes: [`server error ${ar.status}`] });
       }
       bar.style.width = '100%';
-      const set = reading && reading.skipped ? ` ${reading.skipped} ${reading.skipped === 1 ? 'passage that is' : 'passages that are'} not a reference ${reading.skipped === 1 ? 'was' : 'were'} set aside.` : '';
-      status.textContent = `${entries.length} entries checked.${set}`;
+      const set = reading && reading.skipped ? ` and skipped ${reading.skipped} non-reference ${reading.skipped === 1 ? 'passage' : 'passages'}` : '';
+      status.textContent = `RefGuard checked ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}${set}.`;
       certify();
     } catch (err) {
-      status.textContent = `The registry could not be reached, so nothing can be certified. ${err}`;
+      status.textContent = `The registry was unreachable, so RefGuard withholds certification. ${err}`;
       status.className = 'status err';
     } finally {
       running = false; go.disabled = false;

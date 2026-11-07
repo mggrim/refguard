@@ -46,7 +46,7 @@ export function attentionFor(entry: RefEntry, kind: RefKind, r: AuditResult, tru
     case "CONSISTENT":
       return null;
     case "FABRICATED_CANDIDATE":
-      return { level: "fix", reason: "The DOI is registered nowhere, so this reference cannot be found as cited." };
+      return { level: "fix", reason: "The DOI is unregistered, so the reference is unfindable as cited." };
     case "RETRACTED":
       return { level: "fix", reason: "The work has been retracted. Cite it only to discuss the retraction." };
     case "INCONSISTENT":
@@ -54,19 +54,19 @@ export function attentionFor(entry: RefEntry, kind: RefKind, r: AuditResult, tru
         level: "fix",
         reason: r.match_basis === "doi"
           ? `The record at this DOI disagrees with the reference: ${r.notes[0] ?? "a field does not match"}.`
-          : `The title identifies this work, but other fields belong to something else: ${r.notes.find((n) => !n.startsWith("title")) ?? r.notes[0] ?? "a field does not match"}.`,
+          : `RefGuard identified this work from the title, but other fields belong to a different work: ${r.notes.find((n) => !n.startsWith("title")) ?? r.notes[0] ?? "a field does not match"}.`,
       };
     case "REGISTRY_UNREACHABLE":
-      return { level: "cant", reason: "A registry could not be reached, so this was not checked. Run it again later." };
+      return { level: "cant", reason: "A registry was unreachable, so RefGuard left this reference unchecked. Run the check again later." };
     case "UNVERIFIED":
       return {
         level: "cant",
         reason: !REGISTRY_COVERS[kind]
-          ? `A ${REF_KIND_LABEL[kind]}. No registry indexes these, so not finding it says nothing about the reference.`
-          : "Not found in Crossref or Open Library. That is not evidence of a problem; check it by hand if it matters.",
+          ? `A ${REF_KIND_LABEL[kind]}. This kind of source is unindexed in the registries, so treat the missing match as neutral.`
+          : "Crossref and Open Library both lack a record of this reference. Treat that gap as neutral, and check the reference by hand if it matters to your work.",
       };
   }
-  if (!truth) return { level: "fine", reason: "A small difference from the record found." };
+  if (!truth) return { level: "fine", reason: "RefGuard found a small difference from the record." };
 
   // BENIGN_DRIFT and AMBIGUOUS_MATCH: a record was found and differs. Which way it
   // differs, and how strongly the record matches, decides whether it matters.
@@ -80,7 +80,7 @@ export function attentionFor(entry: RefEntry, kind: RefKind, r: AuditResult, tru
   const venue = venueOf(truth);
 
   if (r.verdict === "AMBIGUOUS_MATCH" && r.notes[0]?.includes("too general")) {
-    return { level: "fine", reason: "The title is too general to be sure the record found is this work." };
+    return { level: "fine", reason: "The title is too general for RefGuard to confirm that the record matches this work." };
   }
   if (ey !== null && print && ey < print && years.includes(ey)) {
     return {
@@ -91,13 +91,13 @@ export function attentionFor(entry: RefEntry, kind: RefKind, r: AuditResult, tru
   if (strong && article && ey !== null && years.length && ey < years[0]! && (!HAS_VOLUME.test(entry.raw) || ADVANCE_CITE.test(entry.raw))) {
     return {
       level: "look",
-      reason: `Cited before it was published. The published version is ${venue ? `${venue}, ` : ""}${truth.year}.`,
+      reason: `You cited the work before its publication. The published version is ${venue ? `${venue}, ` : ""}${truth.year}.`,
     };
   }
   if (ey === null && strong && article && ADVANCE_CITE.test(entry.raw) && truth.year) {
     return {
       level: "look",
-      reason: `Cited as forthcoming. The published version is ${venue ? `${venue}, ` : ""}${truth.year}.`,
+      reason: `You cited the work as forthcoming. The published version is ${venue ? `${venue}, ` : ""}${truth.year}.`,
     };
   }
   const nearest = ey !== null && years.length
@@ -115,15 +115,15 @@ export function attentionFor(entry: RefEntry, kind: RefKind, r: AuditResult, tru
     return { level: "fine", reason: `The cited year is when it went online (${ey}); it appeared in print in ${print}. Either year is defensible.` };
   }
   if (ey !== null && years.length && ey < years[0]!) {
-    return { level: "fine", reason: `The cited year is earlier than any version the registry holds (${years.join(", ")}), so an earlier edition or printing probably exists.` };
+    return { level: "fine", reason: `The cited year is earlier than any version that the registry holds (${years.join(", ")}), so an earlier edition or printing probably exists.` };
   }
   if (ey !== null && years.length && ey > years.at(-1)!) {
-    return { level: "fine", reason: `The registry holds an earlier version (${years.join(", ")}); a later edition or printing was probably cited.` };
+    return { level: "fine", reason: `The registry holds an earlier version (${years.join(", ")}); you probably cited a later edition or printing.` };
   }
   if (nearest !== null && ey !== null && Math.abs(ey - nearest) >= 1) {
-    return { level: "fine", reason: `The record found is from ${truth.year}, probably a different edition or printing of the same work.` };
+    return { level: "fine", reason: `The record that RefGuard found dates from ${truth.year} and is probably a different edition or printing of the same work.` };
   }
   if (sim > 0 && sim < 0.9) return { level: "fine", reason: "The title differs from the record only in its subtitle or wording." };
-  if (overlap >= 0 && overlap < 1) return { level: "fine", reason: "Some authors differ from the record's list. Check the author list if it matters." };
-  return { level: "fine", reason: "A small difference from the record found." };
+  if (overlap >= 0 && overlap < 1) return { level: "fine", reason: "Some authors differ from the record's list; check the author list if it matters to your work." };
+  return { level: "fine", reason: "RefGuard found a small difference from the record." };
 }

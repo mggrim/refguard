@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>Check a bibliography &middot; RefGuard</title>
-<meta name="description" content="Paste BibTeX or a plain reference list. Each entry is checked separately against Crossref, Open Library and the DOI registry, and a verdict appears as soon as the registry answers.">
+<meta name="description" content="Paste BibTeX or a plain reference list. RefGuard checks the entries one by one against Crossref, Open Library and the DOI registry and shows a verdict as soon as the registry answers.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/refguard.css">
 </head>
 <body>
 
 <header class="mast">
-  <a class="wordmark" href="/"><b>Ref</b>Guard <small>Registry check</small></a>
+  <a class="wordmark" href="/"><span><b>Ref</b>Guard</span> <small>Registry check</small></a>
   <nav>
-    <a href="/#how">How it works</a>
+    <a href="/#how">The method</a>
     <a href="/#verdicts">Verdicts</a>
   </nav>
 </header>
@@ -24,10 +24,10 @@
 <section class="pagehead">
   <div class="wrap">
     <div>
-      <h1>Paste your bibliography. <em>Get a verdict on every entry.</em></h1>
-      <p>Each entry is checked on its own against Crossref, Open Library and the DOI registry, so results arrive one at a time. Nothing is skipped and nothing is summarised.</p>
+      <h1>Paste your bibliography. <em>Get a verdict entry by entry.</em></h1>
+      <p>RefGuard checks the entries separately against Crossref, Open Library and the DOI registry, so you see the results one at a time. The report covers all the entries in full, without summarizing.</p>
     </div>
-    <div class="facts">No account &middot; nothing kept<br>Up to 300 entries per run<br>No AI in the audit</div>
+    <div class="facts">Free, without an account<br>Lists deleted after the check<br>Up to 300 entries per run<br>Fixed rules, without AI</div>
   </div>
 </section>
 
@@ -53,7 +53,7 @@
 
         <div class="field">
           <div class="lab"><b><label for="email">Your email</label></b></div>
-          <span class="help" id="email-help">Crossref, the registry behind the check, asks for a contact address and gives each one its own allowance. RefGuard passes yours to Crossref and Open Library with each lookup and stores it nowhere. Your browser remembers it for next time.</span>
+          <span class="help" id="email-help">Crossref, the registry behind the check, asks for a contact address and gives contact addresses separate allowances. RefGuard sends your address to Crossref and Open Library with its lookups and then discards the address; your browser saves the address for your next visit.</span>
           <input id="email" name="email" type="email" autocomplete="email" inputmode="email" spellcheck="false" required aria-describedby="email-help" placeholder="you@university.edu">
         </div>
 
@@ -71,37 +71,37 @@
       </div>
       <div class="progress"><i id="bar"></i></div>
       <div class="status" id="status"></div>
-      <p class="empty" id="empty">Paste a bibliography to begin. Each verdict appears as soon as the registry answers.</p>
+      <p class="empty" id="empty">Paste a bibliography to begin. Verdicts appear as soon as the registry answers.</p>
       <div class="coverage" id="reading" role="status" hidden></div>
       <p class="summary" id="summary" hidden></p>
       <div class="group b" id="g-fix" hidden><h3>Fix this</h3><div class="rows"></div></div>
       <div class="group r" id="g-look" hidden><h3>Worth a look</h3><div class="rows"></div></div>
-      <details class="group q fold" id="g-fine" hidden><summary><h3>Probably fine <span class="count"></span></h3></summary><p class="fold-note">Differences of record, not of reference: editions, reprints, print and online years, subtitles.</p><div class="rows"></div></details>
-      <details class="group q fold" id="g-cant" hidden><summary><h3>Can't check here <span class="count"></span></h3></summary><p class="fold-note">Sources no registry indexes, and references the registries do not hold. Not finding one is not evidence of a problem.</p><div class="rows"></div></details>
+      <details class="group q fold" id="g-fine" hidden><summary><h3>Probably fine <span class="count"></span></h3></summary><p class="fold-note">Differences among the published versions of a work: editions, reprints, print and online years, subtitles.</p><div class="rows"></div></details>
+      <details class="group q fold" id="g-cant" hidden><summary><h3>Can't check here <span class="count"></span></h3></summary><p class="fold-note">Sources beyond the registries&rsquo; coverage, and references the registries lack. Treat a missing match as neutral.</p><div class="rows"></div></details>
       <details class="group p fold" id="g-p" hidden><summary><h3>Consistent <span class="count"></span></h3></summary><div class="rows"></div></details>
       <div class="cert" id="cert">
         <div class="big" id="cert-stamp"></div>
         <div>
           <p id="cert-text"></p>
           <textarea id="report-out" class="report-out" hidden readonly aria-label="Report text"></textarea>
-          <div class="tools"><button class="link" id="copy" type="button">Copy report</button><button class="link" id="explain" type="button" aria-expanded="false" aria-controls="glossary">What the verdicts mean</button></div>
+          <div class="tools"><button class="link" id="copy" type="button">Copy report</button><button class="link" id="explain" type="button" aria-expanded="false" aria-controls="glossary">Explain the verdicts</button></div>
         </div>
       </div>
 
       <div class="glossary-inline" id="glossary" hidden>
-        <h3>Four levels of attention</h3>
-        <p>Results are grouped by whether they need your time. <b>Fix this</b>: likely a real error, such as fields from two different papers or a retracted work. <b>Worth a look</b>: a real difference you may want to change, such as citing the online-first year of a paper that now has a volume and issue. <b>Probably fine</b>: a difference of record rather than of reference, such as a reprint, a later edition or a handbook chapter's print and online years. <b>Can't check here</b>: a source no registry indexes, or one the registries do not hold; not finding it is not evidence of a problem.</p>
-        <h3>Eight verdicts in three tiers</h3>
-        <p>Fail-closed means an uncertain reference is sent back to you rather than passed. Nothing the registries do not recognise ever passes.</p>
+        <h3>Levels of attention</h3>
+        <p>Results are grouped by the attention they deserve from you. <b>Fix this</b>: a likely error in the reference, such as fields from two different papers or a retracted work. <b>Worth a look</b>: a substantive difference you may want to correct, such as the online-first year of a paper that now has a volume and issue. <b>Probably fine</b>: a difference among the published versions of the work, such as a reprint, a later edition, or a handbook chapter with separate print and online years. <b>Can't check here</b>: a kind of source beyond the registries' coverage, or a source that the registries lack; treat the missing match as neutral.</p>
+        <h3>The verdicts and their tiers</h3>
+        <p>Fail-closed means that RefGuard returns uncertain references to you for review and withholds a pass. A reference passes only when the registries recognize it.</p>
         <dl>
           <dt><span class="stamp b">Fabricated candidate</span></dt><dd><b>Blocking.</b> Both Crossref and doi.org return 404 for the DOI.</dd>
-          <dt><span class="stamp b">Inconsistent</span></dt><dd><b>Blocking.</b> The paper exists, but the title, authors, year, venue or DOI do not match it. References that mix fields from two papers land here.</dd>
+          <dt><span class="stamp b">Inconsistent</span></dt><dd><b>Blocking.</b> The paper exists, but the cited title, authors, year, venue or DOI conflict with the paper's record. RefGuard gives this verdict to references that mix fields from two papers.</dd>
           <dt><span class="stamp b">Retracted</span></dt><dd><b>Blocking.</b> The registry marks the work as retracted.</dd>
-          <dt><span class="stamp r">Benign drift</span></dt><dd><b>Review.</b> A small difference on the right record: the online-first year cited where the paper has a print year, a year one off that neither date explains, a changed subtitle, or an incomplete author list.</dd>
-          <dt><span class="stamp r">Ambiguous match</span></dt><dd><b>Review.</b> A record was found without a DOI to anchor it, but it may be the wrong one: no author matches, or its year is two or more away from yours. Check which record or edition you cited.</dd>
-          <dt><span class="stamp r">Unverified</span></dt><dd><b>Review.</b> Nothing confirmed it. Not proof of fabrication. If the search returned only a different work, the note names it. Books, theses, reports and trade press are not indexed at all, and the note says so.</dd>
-          <dt><span class="stamp r">Registry unreachable</span></dt><dd><b>Review.</b> A network problem stopped the check, so the reference cannot be certified.</dd>
-          <dt><span class="stamp p">Consistent</span></dt><dd><b>Pass.</b> Every field matches the registry record.</dd>
+          <dt><span class="stamp r">Benign drift</span></dt><dd><b>Review.</b> RefGuard found the right record with a small difference: a citation of the online-first year of a paper that now has a print year, a year off by one for a reason other than the gap between online and print dates, a changed subtitle, or an incomplete author list.</dd>
+          <dt><span class="stamp r">Ambiguous match</span></dt><dd><b>Review.</b> RefGuard found a record, but without a DOI to anchor the match, the record may be the wrong one: the record's authors all differ from yours, or the record's year differs from yours by two or more years. Check which record or edition you cited.</dd>
+          <dt><span class="stamp r">Unverified</span></dt><dd><b>Review.</b> The registries left the reference unconfirmed, which is a weaker finding than fabrication. If the search found only a different work, the note names it. Theses, reports and trade press are unindexed, and the note says so.</dd>
+          <dt><span class="stamp r">Registry unreachable</span></dt><dd><b>Review.</b> RefGuard lost its connection to the registry and so leaves the reference uncertified.</dd>
+          <dt><span class="stamp p">Consistent</span></dt><dd><b>Pass.</b> The cited fields all match the registry record.</dd>
         </dl>
       </div>
     </div>
@@ -111,7 +111,7 @@
 
 <footer class="colophon">
   <div class="wrap">
-    <p>RefGuard checks whether each reference accurately describes a real paper. It cannot judge whether that paper is the right one to cite. Registry data from Crossref, Open Library and doi.org.</p>
+    <p>RefGuard checks whether your references accurately describe real papers; the choice of the right paper to cite remains your judgment. RefGuard takes its registry data from Crossref, Open Library and doi.org.</p>
     <p>MIT licensed &middot; <a href="/">RefGuard home</a></p>
   </div>
 </footer>

@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>RefGuard: the registry check for bibliographies</title>
-<meta name="description" content="Paste a bibliography to check whether each paper exists, whether its fields match, and whether a registry marks the paper as retracted. The audit uses no AI.">
+<meta name="description" content="Paste a bibliography, and RefGuard checks whether the cited papers exist, whether their fields match the registry records, and whether a registry marks any of them as retracted. The audit runs without AI.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/refguard.css">
 <!--
   HERO: a scroll-scrubbed flight. One citation lifts off a manuscript page, splits into
@@ -22,9 +22,9 @@
 <body>
 
 <header class="mast">
-  <a class="wordmark" href="/"><b>Ref</b>Guard <small>Registry check</small></a>
+  <a class="wordmark" href="/"><span><b>Ref</b>Guard</span> <small>Registry check</small></a>
   <nav>
-    <a href="#how">How it works</a>
+    <a href="#how">The method</a>
     <a href="#verdicts">Verdicts</a>
     <a class="cta" href="/check">Check a bibliography</a>
   </nav>
@@ -37,24 +37,24 @@
     <div class="copylayer">
       <article class="copy" data-scene="0">
         <span class="num">01 / 04 &nbsp; THE MANUSCRIPT</span>
-        <h2>Every reference starts as <em>a line of text.</em></h2>
-        <p>You typed it, a co-author sent it, or a model made it up. On the page they all look the same.</p>
+        <h2>A reference starts as <em>a line of text.</em></h2>
+        <p>Whether you typed the reference, a co-author sent it or a model invented it, the line looks the same on the page.</p>
       </article>
       <article class="copy" data-scene="1">
         <span class="num">02 / 04 &nbsp; THE PARSE</span>
-        <h2>The parser separates each one into <em>five fields.</em></h2>
-        <p>Title, authors, year, venue and DOI, pulled out by fixed rules. No model reads the manuscript.</p>
+        <h2>The parser splits the line into <em>fields.</em></h2>
+        <p>RefGuard extracts the title, authors, year, venue and DOI with fixed rules, and it reads your manuscript without a language model.</p>
       </article>
       <article class="copy" data-scene="2">
         <span class="num">03 / 04 &nbsp; THE REGISTRY</span>
-        <h2>Every field is compared with <em>the scholarly record.</em></h2>
-        <p>Crossref and the DOI registry answer three questions. Does the paper exist? Does each field belong to it? Has it been retracted? Books go to Open Library instead, because article registries index journals and the monographs you cite mostly predate DOIs.</p>
+        <h2>RefGuard compares the fields with <em>the scholarly record.</em></h2>
+        <p>RefGuard asks Crossref and the DOI registry three questions: does the paper exist, do the cited fields belong to that paper, and is the paper retracted? For books, it asks Open Library, because the article registries index journals and most of the monographs you cite predate DOIs.</p>
       </article>
       <article class="copy" data-scene="3">
         <span class="num">04 / 04 &nbsp; THE VERDICT</span>
-        <h2>Every verdict rests on <em>evidence.</em></h2>
-        <p>If a registry cannot be reached, the answer is &ldquo;cannot certify&rdquo;, never a pass. A reference is called fabricated only when both registries return 404. Anything unclear goes to review.</p>
-        <div class="cta"><a class="btn" href="/check">Check your bibliography</a><a class="link" href="#verdicts">Read the eight verdicts</a></div>
+        <h2>RefGuard bases its verdicts on <em>evidence.</em></h2>
+        <p>When a registry is unreachable, RefGuard answers &ldquo;cannot certify&rdquo; and withholds a pass. It calls a reference fabricated only when both registries return 404, and it marks unclear references for review.</p>
+        <div class="cta"><a class="btn" href="/check">Check your bibliography</a><a class="link" href="#verdicts">Read about the verdicts</a></div>
       </article>
     </div>
     <div class="route" aria-label="Scenes">
@@ -71,18 +71,18 @@
 <section class="band tint gloss" id="verdicts">
   <div class="wrap">
     <div>
-      <h2>Eight verdicts in three tiers.</h2>
-      <p class="lede">Fail-closed means an uncertain reference is sent back to you to check by hand rather than passed. A reference the registries do not recognise never passes.</p>
+      <h2>The verdicts and their tiers.</h2>
+      <p class="lede">Fail-closed means that RefGuard returns uncertain references to you to check by hand and withholds a pass. A reference passes only when the registries recognize it.</p>
     </div>
     <dl>
       <dt><span class="stamp b">Fabricated candidate</span></dt><dd><b>Blocking.</b> Both Crossref and doi.org return 404 for the DOI.</dd>
-      <dt><span class="stamp b">Inconsistent</span></dt><dd><b>Blocking.</b> The paper exists, but the title, authors, year, venue or DOI do not match it. References that mix fields from two papers land here.</dd>
+      <dt><span class="stamp b">Inconsistent</span></dt><dd><b>Blocking.</b> The paper exists, but the cited title, authors, year, venue or DOI conflict with the paper's record. RefGuard gives this verdict to references that mix fields from two papers.</dd>
       <dt><span class="stamp b">Retracted</span></dt><dd><b>Blocking.</b> The registry marks the paper as retracted.</dd>
-      <dt><span class="stamp r">Benign drift</span></dt><dd><b>Review.</b> The right record, with a small difference: the online-first year cited where the paper has since appeared in print, a year one off that neither date explains, a changed subtitle, or an incomplete author list. The print year is the published state.</dd>
-      <dt><span class="stamp r">Unverified</span></dt><dd><b>Review.</b> Neither registry confirmed the reference, either because nothing was found or because the search returned only a different work, which the note names. That is not proof of fabrication, so check it by hand. Books are checked against Open Library. Theses, reports and trade press are indexed nowhere, and the report says so rather than leaving you guessing.</dd>
-      <dt><span class="stamp r">Ambiguous match</span></dt><dd><b>Review.</b> A record was found without a DOI to anchor it, but it may be the wrong one: the title is too general and no author matches, or its year is two or more away from yours. Probably a different work or edition rather than an error in your reference, so check which one you cited.</dd>
-      <dt><span class="stamp r">Registry unreachable</span></dt><dd><b>Review.</b> A network problem stopped the check, so the reference cannot be certified.</dd>
-      <dt><span class="stamp p">Consistent</span></dt><dd><b>Pass.</b> Every field matches the registry record.</dd>
+      <dt><span class="stamp r">Benign drift</span></dt><dd><b>Review.</b> RefGuard found the right record with a small difference: a citation of the online-first year of a paper that has since appeared in print, a year off by one for a reason other than the gap between online and print dates, a changed subtitle, or an incomplete author list. The print year is the published state.</dd>
+      <dt><span class="stamp r">Unverified</span></dt><dd><b>Review.</b> The registries left the reference unconfirmed: the search drew a blank or found only a different work, which the note names. An unconfirmed reference is a weaker finding than a fabricated one, so check it by hand. RefGuard checks books against Open Library. Theses, reports and trade press are unindexed, and the report says so, so you know the reason for the verdict.</dd>
+      <dt><span class="stamp r">Ambiguous match</span></dt><dd><b>Review.</b> RefGuard found a record, but without a DOI to anchor the match, the record may be the wrong one: the title is too general and the record's authors all differ from yours, or the record's year differs from yours by two or more years. Most likely RefGuard matched a different work or edition, so your reference itself may well be accurate; check which work or edition you cited.</dd>
+      <dt><span class="stamp r">Registry unreachable</span></dt><dd><b>Review.</b> RefGuard lost its connection to the registry and so leaves the reference uncertified.</dd>
+      <dt><span class="stamp p">Consistent</span></dt><dd><b>Pass.</b> The cited fields all match the registry record.</dd>
     </dl>
   </div>
 </section>
@@ -90,15 +90,15 @@
 <!-- ============ CLOSER ============ -->
 <section class="band closer">
   <div class="wrap">
-    <h2>Ready when you are. <em>Paste and check.</em></h2>
+    <h2>RefGuard is ready <em>for your bibliography.</em></h2>
     <a class="btn" href="/check">Check a bibliography</a>
   </div>
 </section>
 
 <footer class="colophon">
   <div class="wrap">
-    <p>RefGuard checks whether each reference accurately describes a real paper. It cannot judge whether that paper is the right one to cite. It draws on verification work by Katie Apker, Pedro Sant&rsquo;Anna, Scott Cunningham, and Dhuliawala et al. (2023, Chain-of-Verification). Registry data comes from Crossref, which publishes the Retraction Watch database, from Open Library for books, and from doi.org.</p>
-    <p>MIT licensed &middot; Your bibliography is checked and discarded, never stored. Cloudflare, which serves this page, keeps standard request logs. &middot; <a href="#how">Back to the top</a></p>
+    <p>RefGuard checks whether your references accurately describe real papers; the choice of the right paper to cite remains your judgment. RefGuard draws on verification work by Katie Apker, Pedro Sant&rsquo;Anna, Scott Cunningham, and Dhuliawala et al. (2023, Chain-of-Verification). RefGuard takes its registry data from Crossref, which publishes the Retraction Watch database, from Open Library for books, and from doi.org.</p>
+    <p>MIT licensed &middot; RefGuard checks your bibliography and discards it at the end of the check. Cloudflare, which serves this page, keeps standard request logs. &middot; <a href="#how">Back to the top</a></p>
   </div>
 </footer>
 

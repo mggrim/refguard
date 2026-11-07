@@ -85,7 +85,7 @@ export default {
       // Used only as the contact address on this entry's registry requests; never stored or logged.
       const email = typeof body?.email === "string" ? body.email.trim() : "";
       if (!validContactEmail(email)) {
-        return json({ error: "an email address is needed to check references; enter yours above the button" }, 400);
+        return json({ error: "RefGuard needs an email address to check references; enter yours above the button" }, 400);
       }
       const entry: RefEntry = {
         key: String(e.key).slice(0, 100),

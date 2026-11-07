@@ -202,7 +202,7 @@ describe("attention levels", () => {
     expect(attentionFor(logue, "journal", result({ verdict: "RETRACTED" }), null)?.level).toBe("fix");
     expect(attentionFor(logue, "journal", result({ verdict: "FABRICATED_CANDIDATE" }), null)?.level).toBe("fix");
     expect(attentionFor(logue, "journal", result({ verdict: "UNVERIFIED" }), null)?.level).toBe("cant");
-    expect(attentionFor(logue, "web", result({ verdict: "UNVERIFIED" }), null)?.reason).toContain("No registry indexes these");
+    expect(attentionFor(logue, "web", result({ verdict: "UNVERIFIED" }), null)?.reason).toContain("unindexed in the registries");
   });
 });
 
